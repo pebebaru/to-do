@@ -9,6 +9,7 @@ export function useTasks() {
     [ready, setReady] = useState(false),
     [status, setStatus] = useState("Loading…");
   const latest = useRef(tasks),
+    syncNow = useRef<() => Promise<void>>(async () => {}),
     dirty = useRef(false),
     loaded = useRef(false),
     generation = useRef(0);
@@ -109,6 +110,8 @@ export function useTasks() {
       if (!snapshot.length) {
         dirty.current = false;
         busy = false;
+        cache(`todo-v2-${user!.id}`, { tasks: [], pending: false });
+        setStatus("Saved");
         return;
       }
       const { error } = await supabase!.from("tasks").upsert(
@@ -137,12 +140,22 @@ export function useTasks() {
       }
     }
     const timer = setInterval(() => void sync(), 1500);
+    syncNow.current = sync;
     window.addEventListener("online", sync);
     return () => {
       cancelled = true;
+      syncNow.current = async () => {};
       clearInterval(timer);
       window.removeEventListener("online", sync);
     };
   }, [user, ready]);
-  return { tasks, update, user, ready, status, cloud: !!supabase };
+  return {
+    tasks,
+    update,
+    user,
+    ready,
+    status,
+    cloud: !!supabase,
+    retry: () => void syncNow.current(),
+  };
 }

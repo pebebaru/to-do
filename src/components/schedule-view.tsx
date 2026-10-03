@@ -38,6 +38,14 @@ export function ScheduleView({
   return (
     <div className="schedule-page">
       <header className="schedule-toolbar">
+        <strong className="schedule-friendly-date">
+          {new Date(`${date}T12:00:00`).toLocaleDateString(undefined, {
+            weekday: "short",
+            day: "numeric",
+            month: "short",
+          })}
+          {range > 1 && ` · ${range} days`}
+        </strong>
         <div className="schedule-date">
           <button
             className="icon-button"

@@ -53,8 +53,8 @@ export function NextPanel({
                 {next.priority === 1
                   ? "Urgent"
                   : next.priority === 2
-                    ? "High"
-                    : "Normal"}
+                    ? "Normal"
+                    : "Low"}
               </span>
               <span
                 className={`dispatch-context ${next.context.toLowerCase()}`}

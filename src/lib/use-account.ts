@@ -22,7 +22,13 @@ export function useAccount(user: User | null) {
       setError("Could not load your account.");
       return;
     }
-    const people = result.data as Profile[];
+    let people = result.data as Profile[];
+    if (people.find((p) => p.id === user.id)?.role === "super_admin") {
+      const { data, error } = await supabase.functions.invoke("account-admin", {
+        body: { action: "list" },
+      });
+      if (!error && data?.members) people = data.members;
+    }
     setTeam(people);
     setProfile(people.find((p) => p.id === user.id) || null);
     setError("");

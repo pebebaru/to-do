@@ -29,4 +29,12 @@ Run `npm test`, `npm run typecheck` and `npm run build`. Release checks cover si
 
 ## Limits
 
-Concurrent-device edits use last-write-wins. Up to 1000 tasks are loaded; larger accounts need pagination. Background push and email recovery are not configured.
+Private task edits use last-write-wins. Shared tasks use version checks to reject conflicting edits. Up to 1000 tasks are loaded; larger accounts need pagination. Background push and email recovery are not configured.
+
+## Team work
+
+Team includes member search, groups, job titles and account actions. Superadmins can edit member details, reset a member password and disable or enable a member. Disabling blocks data access even for an existing session.
+
+Share a saved, non-repeating Work task with selected members. It moves from your private list to Team. Personal and repeating tasks remain private. Groups select recipients at sharing time; later group edits do not change existing task access. Assignment supports accept, decline and taking an unassigned task. The owner and accepted assignee can edit, run the timer and complete the task. Participants can comment and request a date change; the owner approves it. Handoff notes, completion timestamps and scheduled times persist in Supabase.
+
+Apply `supabase/migrations/20261003185216_team_collaboration.sql` and deploy both `account-admin` and `team-tasks` with gateway JWT validation enabled. Shared writes go through the function, which checks live account access and task membership on every request.

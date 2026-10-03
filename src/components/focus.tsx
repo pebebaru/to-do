@@ -50,7 +50,7 @@ export function Focus({
         <span className="brand">{brand.name}</span>
       </header>
       <main>
-        <span className="eyebrow">FOCUS</span>
+        <span className="eyebrow">TIMER</span>
         <span className={`context ${task.context.toLowerCase()}`}>
           {task.context}
         </span>
@@ -107,7 +107,7 @@ export function Focus({
           {task.state === "PAUSED"
             ? "Timer paused."
             : task.duration
-              ? `${task.duration} min estimated · time is a checkpoint, not a deadline`
+              ? `${task.duration} min estimate`
               : "No estimate."}
         </p>
         {step && (
@@ -141,11 +141,11 @@ export function Focus({
           </button>
           <button onClick={onExtend}>
             <Plus size={18} />
-            +10 Mins
+            +10 min
           </button>
           <button disabled={!step} onClick={() => step && onStep(step.id)}>
             <Check size={18} />
-            Next Step
+            Next step
           </button>
         </div>
         <button className="primary finish-focus" onClick={onDone}>

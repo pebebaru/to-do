@@ -1,6 +1,6 @@
 "use client";
 import { ArrowDown, ArrowUp, ArrowRight, GripVertical } from "lucide-react";
-import type { Task } from "@/lib/engine";
+import { day, type Task } from "@/lib/engine";
 export function TaskRow({
   t,
   personName,
@@ -13,6 +13,7 @@ export function TaskRow({
   setEdit,
   snooze,
   start,
+  schedule,
 }: {
   t: Task;
   personName?: string;
@@ -25,6 +26,7 @@ export function TaskRow({
   setEdit: (id: string) => void;
   snooze: (t: Task) => void;
   start: (t: Task) => void;
+  schedule: (start: string) => void;
 }) {
   const progress = t.actions.filter((a) => a.done).length;
   return (
@@ -71,6 +73,56 @@ export function TaskRow({
         P{t.priority}
       </span>
       <span className={`context ${t.context.toLowerCase()}`}>{t.context}</span>
+      <details className="row-menu">
+        <summary aria-label={`More actions for ${t.title}`}>•••</summary>
+        <div>
+          {t.state !== "DONE" && (
+            <>
+              <button onClick={() => start(t)}>Start</button>
+              <button
+                onClick={() => {
+                  const i = visible.findIndex((x) => x.id === t.id);
+                  if (i > 0) move(t.id, visible[i - 1].id);
+                }}
+              >
+                Move up
+              </button>
+              <button
+                onClick={() => {
+                  const i = visible.findIndex((x) => x.id === t.id);
+                  if (i < visible.length - 1) move(t.id, visible[i + 1].id);
+                }}
+              >
+                Move down
+              </button>
+            </>
+          )}
+          <button onClick={() => schedule(`${day()}T09:00`)}>
+            Today · 09:00
+          </button>
+          <button
+            onClick={() => {
+              const d = new Date();
+              d.setDate(d.getDate() + 1);
+              schedule(`${day(d)}T09:00`);
+            }}
+          >
+            Tomorrow · 09:00
+          </button>
+          <label>
+            Schedule
+            <input
+              aria-label={`Schedule ${t.title}`}
+              type="datetime-local"
+              value={t.start}
+              onChange={(e) => {
+                if (e.target.value) schedule(e.target.value);
+              }}
+            />
+          </label>
+          <button onClick={() => setEdit(t.id)}>Task details</button>
+        </div>
+      </details>
       <div className="row-controls" hidden={t.state === "DONE"}>
         <button
           className="icon-button"

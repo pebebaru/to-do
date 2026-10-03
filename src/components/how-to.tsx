@@ -1,13 +1,38 @@
 "use client";
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 export function HowTo({ name, onDone }: { name: string; onDone: () => void }) {
   const [step, setStep] = useState(0),
     [task, setTask] = useState(""),
-    [done, setDone] = useState(false);
+    [done, setDone] = useState(false),
+    [scheduled, setScheduled] = useState(false),
+    [running, setRunning] = useState(false);
+  const ref = useRef<HTMLElement>(null);
+  useEffect(() => {
+    const previous = document.activeElement as HTMLElement;
+    ref.current?.querySelector<HTMLElement>("button")?.focus();
+    return () => previous?.focus();
+  }, []);
   return (
-    <div className="overlay">
+    <div className="overlay tutorial-overlay">
       <section
         className="how-to"
+        ref={ref}
+        onKeyDown={(e) => {
+          if (e.key === "Tab") {
+            const nodes = Array.from(
+              e.currentTarget.querySelectorAll<HTMLElement>("button,input"),
+            ).filter((x) => !x.hasAttribute("disabled"));
+            const first = nodes[0],
+              last = nodes.at(-1);
+            if (e.shiftKey && document.activeElement === first) {
+              e.preventDefault();
+              last?.focus();
+            } else if (!e.shiftKey && document.activeElement === last) {
+              e.preventDefault();
+              first?.focus();
+            }
+          }
+        }}
         role="dialog"
         aria-modal="true"
         aria-label="How to use to:DO"
@@ -42,21 +67,11 @@ export function HowTo({ name, onDone }: { name: string; onDone: () => void }) {
             <p>Schedule adds a time block. Start opens the timer.</p>
             <div className="tour-example">
               <strong>{task || "Write a note"}</strong>
-              <button
-                className="secondary"
-                onClick={(e) => {
-                  e.currentTarget.textContent = "09:00 · 15 min";
-                }}
-              >
-                Try Schedule
+              <button className="secondary" onClick={() => setScheduled(true)}>
+                {scheduled ? "09:00 · 15 min" : "Try Schedule"}
               </button>
-              <button
-                className="primary"
-                onClick={(e) => {
-                  e.currentTarget.textContent = "00:01 · Running";
-                }}
-              >
-                Try Start
+              <button className="primary" onClick={() => setRunning(true)}>
+                {running ? "00:01 · Running" : "Try Start"}
               </button>
             </div>
           </>

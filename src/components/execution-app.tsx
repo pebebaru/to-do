@@ -57,6 +57,9 @@ import { AccountPanel } from "./account-panel";
 import { TeamPanel } from "./team-panel";
 import { HowTo } from "./how-to";
 import { Celebration } from "./celebration";
+import { useCollaboration } from "@/lib/use-collaboration";
+import { SharedTaskDetails } from "./shared-task-details";
+import { canManage } from "@/lib/collaboration";
 type Screen =
   "Today" | "Inbox" | "Projects" | "Team" | "Settings" | "Vault" | "Analytics";
 const screens = [
@@ -69,8 +72,23 @@ const screens = [
   { name: "Analytics", label: "Time", icon: Activity },
 ] as const;
 export function ExecutionApp() {
-  const { tasks, update, user, ready, status, cloud } = useTasks();
+  const { tasks, update, user, ready, status, cloud, retry } = useTasks();
   const account = useAccount(user);
+  const collaboration = useCollaboration(user?.id);
+  const [sharedEdit, setSharedEdit] = useState<string | null>(null),
+    [sharedUndo, setSharedUndo] = useState<{
+      id: string;
+      state: Task["state"];
+    } | null>(null),
+    [showDone, setShowDone] = useState(true),
+    [undo, setUndo] = useState<{ before: Task; spawned: string[] } | null>(
+      null,
+    );
+  const sharedEditing = collaboration.tasks.find((t) => t.id === sharedEdit);
+  const [quickOptions, setQuickOptions] = useState(false),
+    [quickDate, setQuickDate] = useState(""),
+    [quickMinutes, setQuickMinutes] = useState(""),
+    [quickPriority, setQuickPriority] = useState<1 | 2 | 3>(2);
   const [help, setHelp] = useState(false),
     [celebrating, setCelebrating] = useState(false);
   const closeCelebration = useCallback(() => setCelebrating(false), []);
@@ -90,7 +108,7 @@ export function ExecutionApp() {
     [notification, setNotification] = useState(false),
     [drag, setDrag] = useState<string | null>(null),
     [today, setToday] = useState(day());
-  const [tunnel, setTunnel] = useState(true);
+  const [tunnel, setTunnel] = useState(false);
   const [draftNew, setDraftNew] = useState<Task | null>(null);
   const input = useRef<HTMLInputElement>(null);
   useEffect(() => {
@@ -125,7 +143,14 @@ export function ExecutionApp() {
   }, []);
   useEffect(() => {
     if (!toast) return;
-    const t = setTimeout(() => setToast(""), 4500);
+    const t = setTimeout(
+      () => {
+        setToast("");
+        setUndo(null);
+        setSharedUndo(null);
+      },
+      toast === "Done." ? 8000 : 4500,
+    );
     return () => clearTimeout(t);
   }, [toast]);
   useReminders(tasks, notification, assistant, user?.id || "preview");
@@ -138,14 +163,27 @@ export function ExecutionApp() {
         t.title.toLowerCase().includes(query.toLowerCase()),
     )
     .sort((a, b) => a.rank - b.rank);
-  const scheduleTasks = tasks.filter(
+  const scheduleTasks = [
+    ...tasks,
+    ...collaboration.tasks.map((t) => ({ ...t.payload, archived: false })),
+  ].filter(
     (t) =>
       !t.archived &&
+      (showDone || t.state !== "DONE") &&
       (context === "All" || t.context === context) &&
       t.title.toLowerCase().includes(query.toLowerCase()),
   );
   const next = recommend(
-      tasks.filter(
+      [
+        ...tasks,
+        ...collaboration.tasks
+          .filter(
+            (t) =>
+              canManage(t, user?.id || "") &&
+              (!t.assignee || t.assignee === user?.id),
+          )
+          .map((t) => ({ ...t.payload, archived: false })),
+      ].filter(
         (t) => !t.archived && (context === "All" || t.context === context),
       ),
       available,
@@ -153,37 +191,145 @@ export function ExecutionApp() {
     committed = visible.filter((t) => t.committed && t.state !== "WAITING"),
     later = visible.filter((t) => !t.committed && t.state !== "WAITING"),
     waiting = visible.filter((t) => t.state === "WAITING");
-  const active = tasks.find((t) => t.id === focus);
+  const active = [
+    ...collaboration.tasks.map((t) => t.payload),
+    ...tasks.filter((t) => !t.archived),
+  ].find((t) => t.id === focus);
+  const myShared = collaboration.tasks.filter(
+    (t) =>
+      (!t.assignee && t.owner_id === user?.id) ||
+      (t.assignee === user?.id && t.assignment_status === "accepted"),
+  );
+  const myTasks = [
+    ...tasks.filter((t) => !t.archived),
+    ...myShared.map((t) => t.payload),
+  ];
   const editing = draftNew || tasks.find((t) => t.id === edit);
-  const completed = tasks.filter(
+  const completed = myTasks.filter(
     (t) => !t.archived && t.state === "DONE",
   ).length;
-  const total = tasks.filter((t) => !t.archived).length;
+  const total = myTasks.length;
   const progress = total ? Math.round((completed / total) * 100) : 0;
   function createDraft() {
     setDraftNew(newTask("", Math.max(-1, ...tasks.map((t) => t.rank)) + 1));
   }
   function patch(id: string, p: Partial<Task>) {
+    const shared = collaboration.tasks.find((t) => t.id === id);
+    if (shared) {
+      const { seconds, runningSince, ...fields } = p;
+      void collaboration
+        .act(p.state === "PAUSED" ? "pause" : "update", {
+          id,
+          version: shared.version,
+          patch: fields,
+        })
+        .catch((e) => setToast(e.message));
+      return;
+    }
     update(tasks.map((t) => (t.id === id ? { ...t, ...p } : t)));
+  }
+  function openTask(id: string) {
+    if (collaboration.tasks.some((t) => t.id === id)) setSharedEdit(id);
+    else setEdit(id);
+  }
+  function recordCompletion(t: Task, before = t) {
+    const result = complete(t);
+    setUndo({
+      before: {
+        ...before,
+        seconds: elapsed(before),
+        runningSince: null,
+        state:
+          before.state === "ACTIVE"
+            ? "PAUSED"
+            : before.state === "DONE"
+              ? "TODO"
+              : before.state,
+      },
+      spawned: result.slice(1).map((x) => x.id),
+    });
+    update([...tasks.filter((x) => x.id !== t.id), ...result]);
+    setFocus(null);
+    setCelebrating(true);
+    setToast("Done.");
   }
   function finish(t: Task) {
     if (t.state === "DONE") return;
+    const shared = collaboration.tasks.find((s) => s.id === t.id);
+    if (shared) {
+      void collaboration
+        .act("update", {
+          id: t.id,
+          version: shared.version,
+          patch: { state: "DONE" },
+        })
+        .then(() => {
+          setSharedUndo({
+            id: t.id,
+            state: t.state === "ACTIVE" ? "PAUSED" : t.state,
+          });
+          setUndo(null);
+          setFocus(null);
+          setCelebrating(true);
+          setToast("Done.");
+        })
+        .catch((e) => setToast(e.message));
+      return;
+    }
     if (
       t.actions.some((a) => !a.done) &&
       !window.confirm("Some steps are still open. Finish this task anyway?")
     )
       return;
-    update([...tasks.filter((x) => x.id !== t.id), ...complete(t)]);
-    setFocus(null);
-    setCelebrating(true);
+    recordCompletion(t);
   }
   function start(t: Task) {
-    const current = tasks.find((x) => x.state === "ACTIVE" && x.id !== t.id);
+    const shared = collaboration.tasks.find((s) => s.id === t.id);
+    const current = [
+      ...tasks.filter((t) => !t.archived),
+      ...collaboration.tasks
+        .filter((s) => canManage(s, user?.id || ""))
+        .map((s) => s.payload),
+    ].find((x) => x.state === "ACTIVE" && x.id !== t.id);
     if (
       current &&
       !window.confirm(`Pause “${current.title}” and start this instead?`)
     )
       return;
+    const currentShared = collaboration.tasks.find((s) => s.id === current?.id);
+    if (shared || currentShared) {
+      void (async () => {
+        if (currentShared)
+          await collaboration.act("pause", {
+            id: currentShared.id,
+            version: currentShared.version,
+          });
+        if (shared) {
+          if (current && !currentShared)
+            update(
+              tasks.map((x) =>
+                x.id === current.id
+                  ? {
+                      ...x,
+                      state: "PAUSED",
+                      seconds: elapsed(x),
+                      runningSince: null,
+                    }
+                  : x,
+              ),
+            );
+          await collaboration.act("start", {
+            id: t.id,
+            version: shared.version,
+          });
+          setFocus(t.id);
+        } else startPrivate(t);
+      })().catch((e) => setToast(e.message));
+      return;
+    }
+    startPrivate(t);
+  }
+  function startPrivate(t: Task) {
     update(
       tasks.map((x) =>
         x.id === t.id
@@ -210,6 +356,23 @@ export function ExecutionApp() {
     );
     if (context !== "All" && !/@(work|personal)\b/i.test(capture))
       t.context = context;
+    if (quickOptions) {
+      if (
+        quickMinutes &&
+        (!Number.isInteger(Number(quickMinutes)) ||
+          Number(quickMinutes) < 0 ||
+          Number(quickMinutes) > 1440)
+      ) {
+        setToast("Use 0–1440 minutes.");
+        return;
+      }
+      if (quickDate) {
+        t.due = quickDate;
+        t.committed = quickDate === day();
+      }
+      if (quickMinutes) t.duration = Number(quickMinutes);
+      t.priority = quickPriority;
+    }
     if (!t.title) {
       setToast("Add a task title before the capture shortcuts.");
       return;
@@ -233,6 +396,18 @@ export function ExecutionApp() {
   function snooze(t: Task) {
     const d = new Date();
     d.setDate(d.getDate() + 1);
+    const shared = collaboration.tasks.find((s) => s.id === t.id);
+    if (shared) {
+      void collaboration
+        .act("update", {
+          id: t.id,
+          version: shared.version,
+          patch: { due: day(d), start: "", state: "RESCHEDULED" },
+        })
+        .then(() => setToast("Moved to tomorrow."))
+        .catch((e) => setToast(e.message));
+      return;
+    }
     patch(t.id, {
       due: day(d),
       start: "",
@@ -245,6 +420,25 @@ export function ExecutionApp() {
     setToast("Moved to tomorrow.");
   }
   function row(t: Task) {
+    if (collaboration.tasks.some((x) => x.id === t.id))
+      return (
+        <button
+          className="shared-task-card"
+          key={t.id}
+          onClick={() => openTask(t.id)}
+        >
+          <strong>
+            {t.state === "DONE" ? "✓ " : ""}
+            {t.title}
+          </strong>
+          <small>
+            Shared Work task
+            {t.start
+              ? ` · ${new Date(t.start).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`
+              : ""}
+          </small>
+        </button>
+      );
     return (
       <TaskRow
         key={t.id}
@@ -259,6 +453,13 @@ export function ExecutionApp() {
         setEdit={setEdit}
         snooze={snooze}
         start={start}
+        schedule={(start) =>
+          patch(t.id, {
+            start,
+            duration: t.duration || 30,
+            state: t.state === "DONE" ? "DONE" : "SCHEDULED",
+          })
+        }
       />
     );
   }
@@ -266,7 +467,7 @@ export function ExecutionApp() {
     return (
       <div className="capture-card">
         <form className="capture" onSubmit={captureTask}>
-          <Keyboard size={20} />
+          <Plus size={20} />
           <input
             ref={input}
             aria-label="Capture a task"
@@ -274,21 +475,66 @@ export function ExecutionApp() {
             onChange={(e) => setCapture(e.target.value)}
             placeholder="Add a task"
           />
-          <button aria-label="Save task" disabled={!capture.trim()}>
-            <span className="desktop-enter">ENTER</span>
-            <ArrowRight className="mobile-send" size={19} />
+          <button aria-label="Add task" disabled={!capture.trim()}>
+            <span className="desktop-enter">ADD</span>
+            <Plus className="mobile-send" size={19} />
           </button>
         </form>
-        <div className="capture-syntax">
-          <span>Shortcuts:</span>
-          <span className="syntax-tag">@tag</span>
-          <span className="syntax-priority">#priority</span>
-          <span className="syntax-duration">~duration</span>
-          <span className="syntax-date">!date</span>
-          <span className="parser-status">
-            <i />
-          </span>
-        </div>
+        <button
+          className="text-button quick-options-toggle"
+          aria-expanded={quickOptions}
+          onClick={() => setQuickOptions(!quickOptions)}
+        >
+          Options
+        </button>
+        {quickOptions && (
+          <div className="quick-options">
+            <label>
+              Due
+              <input
+                type="date"
+                value={quickDate}
+                onChange={(e) => setQuickDate(e.target.value)}
+              />
+            </label>
+            <label>
+              Minutes
+              <input
+                type="number"
+                min={0}
+                max={1440}
+                value={quickMinutes}
+                onChange={(e) => setQuickMinutes(e.target.value)}
+              />
+            </label>
+            <label>
+              Priority
+              <select
+                value={quickPriority}
+                onChange={(e) =>
+                  setQuickPriority(Number(e.target.value) as 1 | 2 | 3)
+                }
+              >
+                <option value={1}>Urgent</option>
+                <option value={2}>Normal</option>
+                <option value={3}>Low</option>
+              </select>
+            </label>
+          </div>
+        )}
+        <details className="capture-shortcuts">
+          <summary>Shortcuts</summary>
+          <div className="capture-syntax">
+            <span>Shortcuts:</span>
+            <span className="syntax-tag">@tag</span>
+            <span className="syntax-priority">#priority</span>
+            <span className="syntax-duration">~duration</span>
+            <span className="syntax-date">!date</span>
+            <span className="parser-status">
+              <i />
+            </span>
+          </div>
+        </details>
       </div>
     );
   }
@@ -326,7 +572,7 @@ export function ExecutionApp() {
       </main>
     );
   if (!user) return <SignIn />;
-  if (!account.profile)
+  if (!account.profile || account.profile.id !== user.id)
     return (
       <main className="auth-page">
         <h1>to:DO</h1>
@@ -534,7 +780,7 @@ export function ExecutionApp() {
               onClick={createDraft}
             >
               <Plus size={16} />
-              New Task
+              Add task
             </button>
             <button
               className="icon-button"
@@ -554,9 +800,18 @@ export function ExecutionApp() {
           </div>
         </header>
         <main className="content">
+          {status !== "Saved" && status !== "Sign in" && (
+            <div className="save-feedback" role="status">
+              {status}
+              {status !== "Saving…" && (
+                <button className="text-button" onClick={retry}>
+                  Retry
+                </button>
+              )}
+            </div>
+          )}
           <div className="command-heading">
             <div>
-              <span className="status-dot" />
               <h1>
                 {screen === "Today"
                   ? mode === "Schedule"
@@ -585,7 +840,7 @@ export function ExecutionApp() {
               <Search size={16} />
               <input
                 aria-label="Search tasks"
-                placeholder="Find a task"
+                placeholder="Search tasks"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
               />
@@ -602,10 +857,7 @@ export function ExecutionApp() {
               Press <kbd>⌘B</kbd> to toggle preview
             </button>
           </div>
-          {screen !== "Team" &&
-            screen !== "Settings" &&
-            (screen !== "Today" || mode !== "List") &&
-            captureBar()}
+          {screen !== "Team" && screen !== "Settings" && captureBar()}
           {screen !== "Settings" && screen !== "Team" && (
             <div className="view-toolbar">
               <div className="segments">
@@ -621,6 +873,14 @@ export function ExecutionApp() {
                 ))}
               </div>
               <div className="view-buttons">
+                <label className="inline-check show-done">
+                  <input
+                    type="checkbox"
+                    checked={showDone}
+                    onChange={(e) => setShowDone(e.target.checked)}
+                  />
+                  Show done
+                </label>
                 {[
                   { name: "List", icon: List },
                   { name: "Schedule", icon: CalendarDays },
@@ -644,7 +904,7 @@ export function ExecutionApp() {
             <div className="today-layout">
               <DayFlow
                 tasks={scheduleTasks}
-                onEdit={setEdit}
+                onEdit={openTask}
                 onSchedule={() => setMode("Schedule")}
               />
               <div className="execution-lane">
@@ -660,10 +920,33 @@ export function ExecutionApp() {
                   finish={finish}
                   snooze={snooze}
                 />
-                {captureBar()}
                 <div className="queue secondary-panel">
                   {section("Queue", committed, "Sort: Your order")}
                   {section("Later", later)}
+                  {myShared.length > 0 &&
+                    section(
+                      "Shared tasks",
+                      myShared
+                        .map((t) => t.payload)
+                        .filter(
+                          (t) =>
+                            (showDone || t.state !== "DONE") &&
+                            (context === "All" || context === "Work") &&
+                            t.title.toLowerCase().includes(query.toLowerCase()),
+                        ),
+                    )}
+                  {showDone &&
+                    tasks.some((t) => !t.archived && t.state === "DONE") &&
+                    section(
+                      "Done",
+                      tasks.filter(
+                        (t) =>
+                          !t.archived &&
+                          t.state === "DONE" &&
+                          (context === "All" || context === t.context) &&
+                          t.title.toLowerCase().includes(query.toLowerCase()),
+                      ),
+                    )}
                 </div>
                 <div className="summary-ribbon secondary-panel">
                   <div>
@@ -754,6 +1037,18 @@ export function ExecutionApp() {
               profile={account.profile}
               team={account.team}
               refresh={account.refresh}
+              tasks={collaboration.tasks}
+              groups={collaboration.groups}
+              privateTasks={status === "Saved" ? tasks : []}
+              act={collaboration.act}
+              onSelect={setSharedEdit}
+              onShared={(id) =>
+                patch(id, {
+                  archived: true,
+                  source: "shared",
+                  runningSince: null,
+                })
+              }
             />
           )}
           {screen !== "Settings" && screen !== "Team" && mode === "Split" && (
@@ -775,7 +1070,7 @@ export function ExecutionApp() {
             mode === "Schedule" && (
               <ScheduleView
                 tasks={scheduleTasks}
-                onEdit={setEdit}
+                onEdit={openTask}
                 onNew={(start) =>
                   setDraftNew({
                     ...newTask(
@@ -829,24 +1124,32 @@ export function ExecutionApp() {
                   onMessage={setToast}
                 />
               )}
-              <h2>History</h2>
-              {tasks
-                .filter((t) => t.archived || t.state === "DONE")
-                .map((t) => (
-                  <div className="archive-row" key={t.id}>
-                    <span>
-                      <Check size={15} /> {t.title}
-                    </span>
-                    <button
-                      className="text-button"
-                      onClick={() =>
-                        patch(t.id, { archived: false, state: "TODO" })
-                      }
-                    >
-                      Restore
-                    </button>
-                  </div>
-                ))}
+              {screen === "Vault" && (
+                <>
+                  <h2>History</h2>
+                  {tasks
+                    .filter(
+                      (t) =>
+                        t.source !== "shared" &&
+                        (t.archived || t.state === "DONE"),
+                    )
+                    .map((t) => (
+                      <div className="archive-row" key={t.id}>
+                        <span>
+                          <Check size={15} /> {t.title}
+                        </span>
+                        <button
+                          className="text-button"
+                          onClick={() =>
+                            patch(t.id, { archived: false, state: "TODO" })
+                          }
+                        >
+                          Restore
+                        </button>
+                      </div>
+                    ))}
+                </>
+              )}
             </section>
           )}
           <footer className="content-footer">
@@ -883,15 +1186,19 @@ export function ExecutionApp() {
           }}
           onSave={(t) => {
             if (t.state === "DONE" && (draftNew || editing.state !== "DONE")) {
-              update([
-                ...tasks.filter((x) => x.id !== t.id),
-                ...complete({
+              recordCompletion(
+                {
                   ...t,
                   title: t.title.trim(),
                   seconds: elapsed(editing),
                   runningSince: null,
-                }),
-              ]);
+                },
+                {
+                  ...t,
+                  state: draftNew ? "TODO" : editing.state,
+                  completedAt: editing.completedAt,
+                },
+              );
               setDraftNew(null);
               setEdit(null);
               setCelebrating(true);
@@ -914,6 +1221,27 @@ export function ExecutionApp() {
           }}
         />
       )}
+      {sharedEditing && (
+        <SharedTaskDetails
+          task={sharedEditing}
+          profile={account.profile}
+          team={account.team}
+          groups={collaboration.groups}
+          act={collaboration.act}
+          onClose={() => setSharedEdit(null)}
+          onFinish={() => setCelebrating(true)}
+          onStart={() => {
+            setSharedEdit(null);
+            start(sharedEditing.payload);
+          }}
+        />
+      )}
+      {collaboration.error && (
+        <div className="cloud-error" role="status">
+          {collaboration.error}
+          <button onClick={() => void collaboration.refresh()}>Retry</button>
+        </div>
+      )}
       {(help || !account.profile.onboarded) && (
         <HowTo
           name={account.profile.display_name || account.profile.username}
@@ -927,6 +1255,50 @@ export function ExecutionApp() {
         <div className="toast" role="status">
           <Check size={17} />
           {toast}
+          {sharedUndo && toast === "Done." && (
+            <button
+              className="text-button"
+              onClick={() => {
+                const t = collaboration.tasks.find(
+                  (t) => t.id === sharedUndo.id,
+                );
+                if (t)
+                  void collaboration
+                    .act("update", {
+                      id: t.id,
+                      version: t.version,
+                      patch: { state: sharedUndo.state },
+                    })
+                    .then(() => {
+                      setSharedUndo(null);
+                      setCelebrating(false);
+                      setToast("Reopened.");
+                    })
+                    .catch((e) => setToast(e.message));
+              }}
+            >
+              Undo
+            </button>
+          )}
+          {undo && toast === "Done." && (
+            <button
+              className="text-button"
+              onClick={() => {
+                update([
+                  ...tasks.filter(
+                    (t) =>
+                      t.id !== undo.before.id && !undo.spawned.includes(t.id),
+                  ),
+                  undo.before,
+                ]);
+                setUndo(null);
+                setCelebrating(false);
+                setToast("Reopened.");
+              }}
+            >
+              Undo
+            </button>
+          )}
           <button
             className="icon-button"
             aria-label="Dismiss message"

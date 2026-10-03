@@ -42,6 +42,73 @@ Deno.serve(async (req: Request) => {
       .single();
     if (!actor?.enabled || actor.role !== "super_admin")
       return reply({ error: "Admin only." }, 403);
+    if (body.action === "list") {
+      const { data, error } = await admin
+        .from("profiles")
+        .select(
+          "id,username,display_name,job_title,role,theme,onboarded,enabled",
+        )
+        .order("display_name");
+      return error
+        ? reply({ error: "Could not load members." }, 500)
+        : reply({ members: data });
+    }
+    if (["edit", "access", "reset-password"].includes(body.action)) {
+      const { data: target } = await admin
+        .from("profiles")
+        .select("id,role")
+        .eq("id", String(body.id || ""))
+        .single();
+      if (!target) return reply({ error: "Member unavailable." }, 404);
+      if (body.action === "edit") {
+        const name = String(body.name || "").trim(),
+          job = String(body.job_title || "").trim();
+        if (!name || name.length > 80 || job.length > 100)
+          return reply({ error: "Check name and job title." }, 400);
+        const { error } = await admin
+          .from("profiles")
+          .update({ display_name: name, job_title: job })
+          .eq("id", target.id);
+        return error
+          ? reply({ error: "Could not update member." }, 500)
+          : reply({ ok: true });
+      }
+      if (target.role === "super_admin")
+        return reply(
+          {
+            error:
+              "Use Account for your own password. Superadmin access cannot be disabled here.",
+          },
+          400,
+        );
+      if (body.action === "reset-password") {
+        if (typeof body.password !== "string" || body.password.length < 10)
+          return reply({ error: "Use at least 10 characters." }, 400);
+        const { error } = await admin.auth.admin.updateUserById(target.id, {
+          password: body.password,
+        });
+        return error
+          ? reply({ error: "Could not reset password." }, 500)
+          : reply({ ok: true });
+      }
+      if (typeof body.enabled !== "boolean")
+        return reply({ error: "Choose enable or disable." }, 400);
+      const { error: authChange } = await admin.auth.admin.updateUserById(
+        target.id,
+        {
+          ban_duration: body.enabled ? "none" : "876000h",
+          app_metadata: { managed_account: body.enabled },
+        },
+      );
+      if (authChange) return reply({ error: "Could not change access." }, 500);
+      const { error } = await admin
+        .from("profiles")
+        .update({ enabled: body.enabled })
+        .eq("id", target.id);
+      return error
+        ? reply({ error: "Could not save access. Retry." }, 500)
+        : reply({ ok: true });
+    }
     if (body.action !== "create")
       return reply({ error: "Unknown action." }, 400);
     const username = String(body.username || "")
