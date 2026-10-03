@@ -143,7 +143,7 @@ export function ScheduleView({
                         return (
                           <button
                             key={t.id}
-                            className={`timeline-event ${t.context.toLowerCase()} ${conflict ? "overlapping" : ""}`}
+                            className={`timeline-event ${t.context.toLowerCase()} ${t.state === "DONE" ? "completed-block" : ""} ${conflict ? "overlapping" : ""}`}
                             style={{
                               top,
                               height: Math.max(
@@ -165,9 +165,11 @@ export function ScheduleView({
                             </span>
                             <strong>{t.title}</strong>
                             <small>
-                              {conflict
-                                ? "Overlaps another commitment"
-                                : t.context}
+                              {t.state === "DONE"
+                                ? "✓ Done"
+                                : conflict
+                                  ? "Time overlap"
+                                  : t.context}
                             </small>
                           </button>
                         );
@@ -196,15 +198,14 @@ export function ScheduleView({
         </section>
         <aside className="schedule-pool">
           <header>
-            <h2>Unscheduled queue</h2>
-            <span className="mono">{tasks.filter((t) => !t.start).length}</span>
+            <h2>Unscheduled</h2>
+            <span className="mono">
+              {tasks.filter((t) => !t.start && t.state !== "DONE").length}
+            </span>
           </header>
-          <p>
-            Choose a task to give it a time block. Your list stays in its own
-            order.
-          </p>
+          <p>Select a task to schedule it.</p>
           {tasks
-            .filter((t) => !t.start)
+            .filter((t) => !t.start && t.state !== "DONE")
             .map((t) => (
               <button
                 key={t.id}
@@ -228,6 +229,12 @@ export function ScheduleView({
                 </small>
               </button>
             ))}
+          {tasks.some((t) => !t.start && t.state === "DONE") && (
+            <section className="task-section">
+              <h2>Done</h2>
+              {tasks.filter((t) => !t.start && t.state === "DONE").map(row)}
+            </section>
+          )}
         </aside>
       </div>
     </div>

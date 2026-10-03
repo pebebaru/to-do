@@ -8,21 +8,26 @@ import {
   ArrowUpRight,
 } from "lucide-react";
 import { elapsed, type Task } from "@/lib/engine";
+import type { Profile } from "@/lib/accounts";
 export function ExecutionDeck({
   tasks,
   status,
   cloud,
   onEdit,
   onPeople,
+  team,
 }: {
   tasks: Task[];
   status: string;
   cloud: boolean;
   onEdit: (id: string) => void;
   onPeople: () => void;
+  team: Profile[];
 }) {
   const live = tasks.filter((t) => !t.archived);
-  const waiting = live.filter((t) => t.state === "WAITING");
+  const waiting = live.filter(
+    (t) => t.state === "WAITING" && team.some((p) => p.id === t.person),
+  );
   const rituals = live.filter((t) => t.recurrence !== "none");
   const done = live.filter((t) => t.state === "DONE");
   const seconds = live.reduce((sum, t) => sum + elapsed(t), 0);
@@ -32,7 +37,7 @@ export function ExecutionDeck({
         <header>
           <h2>
             <Repeat2 size={18} />
-            Daily Rituals
+            Repeating tasks
           </h2>
           <span className="mono positive">
             {rituals.filter((t) => t.state === "DONE").length}/{rituals.length}{" "}
@@ -51,18 +56,18 @@ export function ExecutionDeck({
             </button>
           ))
         ) : (
-          <p className="deck-empty">Add a repeating task to build a ritual.</p>
+          <p className="deck-empty">No repeating tasks.</p>
         )}
       </section>
       <section className="deck-card">
         <header>
           <h2>
             <Users size={18} />
-            Waiting on
+            Waiting for
           </h2>
           <button
             className="icon-button"
-            aria-label="Open People"
+            aria-label="Open Team"
             onClick={onPeople}
           >
             <ArrowUpRight size={16} />
@@ -75,29 +80,33 @@ export function ExecutionDeck({
               key={t.id}
               onClick={() => onEdit(t.id)}
             >
-              <span className="waiting-avatar">{(t.person || "?")[0]}</span>
+              <span className="waiting-avatar">
+                {(team.find((p) => p.id === t.person)?.display_name || "?")[0]}
+              </span>
               <span>
-                <strong>{t.person || "A response"}</strong>
+                <strong>
+                  {team.find((p) => p.id === t.person)?.display_name}
+                </strong>
                 <small>{t.title}</small>
               </span>
               <span className="waiting-label">WAITING</span>
             </button>
           ))
         ) : (
-          <p className="deck-empty">No external blockers.</p>
+          <p className="deck-empty">Nothing waiting.</p>
         )}
       </section>
       <section className="deck-card">
         <header>
           <h2>
             <Activity size={18} />
-            Live Telemetry
+            Summary
           </h2>
           <span className="status-dot" />
         </header>
         <div className="metrics-grid">
           <div>
-            <span>FOCUS TIME</span>
+            <span>TIME SPENT</span>
             <strong>
               {Math.floor(seconds / 3600)}h {Math.floor((seconds % 3600) / 60)}m
             </strong>
@@ -108,14 +117,14 @@ export function ExecutionDeck({
             <strong className="positive">
               {done.length}/{live.length}
             </strong>
-            <small>Across your task pool</small>
+            <small>Total tasks</small>
           </div>
           <div>
-            <span>COMMITTED</span>
+            <span>TODAY</span>
             <strong>
               {live.filter((t) => t.committed && t.state !== "DONE").length}
             </strong>
-            <small>Open commitments</small>
+            <small>Today’s tasks</small>
           </div>
           <div>
             <span>
@@ -127,7 +136,7 @@ export function ExecutionDeck({
         </div>
         <div className="telemetry-status">
           <Clock3 size={14} />
-          <span>Actual task data · your pace</span>
+          <span></span>
         </div>
       </section>
     </aside>

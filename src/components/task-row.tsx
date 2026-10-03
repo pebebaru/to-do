@@ -3,6 +3,7 @@ import { ArrowDown, ArrowUp, ArrowRight, GripVertical } from "lucide-react";
 import type { Task } from "@/lib/engine";
 export function TaskRow({
   t,
+  personName,
   today,
   visible,
   drag,
@@ -14,6 +15,7 @@ export function TaskRow({
   start,
 }: {
   t: Task;
+  personName?: string;
   today: string;
   visible: Task[];
   drag: string | null;
@@ -41,9 +43,12 @@ export function TaskRow({
       <GripVertical className="grip" size={16} />
       <button
         className="check-circle"
-        aria-label={`Complete ${t.title}`}
+        aria-label={`${t.state === "DONE" ? "Done" : "Complete"} ${t.title}`}
+        disabled={t.state === "DONE"}
         onClick={() => finish(t)}
-      />
+      >
+        {t.state === "DONE" ? "✓" : ""}
+      </button>
       <button className="task-title" onClick={() => setEdit(t.id)}>
         <strong>{t.title}</strong>
         <span>
@@ -53,15 +58,20 @@ export function TaskRow({
           {t.duration
             ? `${t.duration} min`
             : t.state === "WAITING"
-              ? `Waiting for ${t.person || "a response"}`
+              ? `Waiting for ${personName || "a response"}`
               : "No time estimate"}
           {t.start &&
             ` · ${new Date(t.start).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`}
         </span>
       </button>
-      <span className={`priority-pill p${t.priority}`} title={`Priority ${t.priority}`}>P{t.priority}</span>
+      <span
+        className={`priority-pill p${t.priority}`}
+        title={`Priority ${t.priority}`}
+      >
+        P{t.priority}
+      </span>
       <span className={`context ${t.context.toLowerCase()}`}>{t.context}</span>
-      <div className="row-controls">
+      <div className="row-controls" hidden={t.state === "DONE"}>
         <button
           className="icon-button"
           title="Move up"

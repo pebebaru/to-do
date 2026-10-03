@@ -12,22 +12,13 @@ export function DayFlow({
   onSchedule: () => void;
 }) {
   const scheduled = tasks
-    .filter(
-      (t) =>
-        !!t.start &&
-        day(new Date(t.start)) === day() &&
-        !t.archived &&
-        t.state !== "DONE",
-    )
+    .filter((t) => !!t.start && day(new Date(t.start)) === day() && !t.archived)
     .sort((a, b) => a.start.localeCompare(b.start));
-  const commitments = tasks
-    .filter((t) => t.committed && !t.archived && t.state !== "DONE")
-    .sort((a, b) => a.rank - b.rank);
   return (
     <aside className="day-flow">
       <header>
         <h2>
-          <CalendarDays size={17} /> Day flow
+          <CalendarDays size={17} /> Schedule
         </h2>
         <button
           className="icon-button"
@@ -37,13 +28,12 @@ export function DayFlow({
           <ArrowUpRight size={17} />
         </button>
       </header>
-      <p className="flow-subtitle">Personal + Work. One day.</p>
       {scheduled.length ? (
         <div className="flow-timeline">
           {scheduled.slice(0, 5).map((t) => (
             <button
               key={t.id}
-              className={`flow-block ${t.context.toLowerCase()}`}
+              className={`flow-block ${t.context.toLowerCase()} ${t.state === "DONE" ? "completed-block" : ""}`}
               onClick={() => onEdit(t.id)}
             >
               <time>
@@ -54,7 +44,7 @@ export function DayFlow({
               </time>
               <strong>{t.title}</strong>
               <span>
-                {t.context} ·{" "}
+                {t.state === "DONE" ? "Done" : t.context} ·{" "}
                 {t.duration ? `${t.duration} min` : "Optional estimate"}
               </span>
             </button>
@@ -63,32 +53,12 @@ export function DayFlow({
       ) : (
         <div className="flow-empty">
           <Clock3 size={25} />
-          <strong>Your time is open.</strong>
-          <p>
-            You can add a time block when it helps. Starting doesn’t need a
-            schedule.
-          </p>
+          <strong>No time blocks today.</strong>
           <button className="text-button" onClick={onSchedule}>
-            Plan a time block <ArrowUpRight size={14} />
+            Add time block <ArrowUpRight size={14} />
           </button>
         </div>
       )}
-      <div className="flow-footer">
-        <span className="eyebrow">YOUR COMMITMENTS</span>
-        {commitments.length ? (
-          <p>
-            {commitments.length} intentional{" "}
-            {commitments.length === 1 ? "commitment" : "commitments"}.<br />
-            Leave room for real life.
-          </p>
-        ) : (
-          <p>
-            A small plan is enough.
-            <br />
-            Commit when you’re ready.
-          </p>
-        )}
-      </div>
     </aside>
   );
 }

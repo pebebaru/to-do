@@ -32,6 +32,7 @@ export type Task = {
   assignedBy: string;
   source: string;
   archived: boolean;
+  completedAt?: string;
 };
 export function day(date = new Date()) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
@@ -121,18 +122,16 @@ export function recommend(tasks: Task[], available: number) {
 }
 export function reasons(t: Task, available: number) {
   return [
-    t.state === "ACTIVE"
-      ? "You already started this."
-      : "First in your eligible manual order.",
+    t.state === "ACTIVE" ? "Already started." : "Next in your order.",
     t.due
       ? t.due <= day()
-        ? "Its deadline deserves attention."
+        ? "Due today or earlier."
         : `Due ${t.due}.`
-      : "No deadline pressure.",
+      : "No due date.",
     t.duration
       ? `${t.duration} minutes estimated; ${available} minutes available.`
-      : "You can start with a small step.",
-    "No unfinished dependencies.",
+      : "No estimate.",
+    "Required tasks are done.",
   ];
 }
 export function overlaps(a: Task, b: Task) {
@@ -158,6 +157,7 @@ export function complete(t: Task, now = new Date()): Task[] {
     state: "DONE" as State,
     seconds: elapsed(t, now.getTime()),
     runningSince: null,
+    completedAt: now.toISOString(),
   };
   if (t.recurrence === "none") return [done];
   const base =
@@ -173,6 +173,7 @@ export function complete(t: Task, now = new Date()): Task[] {
       ...t,
       id: crypto.randomUUID(),
       state: "TODO",
+      completedAt: undefined,
       due: day(base),
       start: "",
       committed: false,
@@ -183,36 +184,4 @@ export function complete(t: Task, now = new Date()): Task[] {
       actions: t.actions.map((a) => ({ ...a, done: false })),
     },
   ];
-}
-export function examples(): Task[] {
-  const titles = [
-    "Review the new campaign",
-    "Send the proposal to Maya",
-    "Pay the electricity bill",
-    "Launch the new website",
-    "Quotation from Andre",
-    "Make time for a walk",
-  ];
-  return titles.map((title, i) => {
-    const t = newTask(title, i);
-    return {
-      ...t,
-      context: (i === 2 || i === 5 ? "Personal" : "Work") as Context,
-      priority: (i === 0 ? 1 : i === 5 ? 3 : 2) as 1 | 2 | 3,
-      duration: [45, 20, 10, 30, 0, 25][i],
-      committed: i < 3,
-      due: i < 4 ? day() : "",
-      person: i === 4 ? "Andre" : i === 1 ? "Maya" : "",
-      state: i === 4 ? "WAITING" : "TODO",
-      actions:
-        i === 3
-          ? [
-              { id: "copy", title: "Write the copy", done: true },
-              { id: "design", title: "Review the design", done: true },
-              { id: "qa", title: "Check the mobile experience", done: false },
-              { id: "ship", title: "Publish the website", done: false },
-            ]
-          : [],
-    };
-  });
 }

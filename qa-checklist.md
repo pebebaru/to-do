@@ -1,11 +1,12 @@
-# to:DO QA
+# Release verification
 
-- Automated engine checks: manual-order precedence, waiting exclusion, dependencies, availability, overlapping commitments, recurrence semantics, active focus precedence.
-- Local checks passed: eleven engine tests, TypeScript, production build. Capture parser tests cover metadata, date commitment, unknown words, and preserving manual start.
-- Browser checks passed: capture/edit/done, focus/pause/resume and elapsed time, next-action transition, Personal filtering, mobile manual ordering, date/time persistence, Personal/Work schedule overlap warnings, Split view, and local persistence after reload.
-- Responsive checks: 390px mobile screenshot, 768px tablet overflow check, 1265px desktop screenshot, 1440px desktop viewport. Broader device/browser coverage and screen-reader testing remain release gates.
-- Stitch rebuild: exact reference color tokens and variable font weights; desktop 256px sidebar and 3/6/3 command center; mobile critical dispatch, capture, queue and five-item navigation. Browser verified task capture, scheduling, child completion, pause/resume, estimate extension, emergency capture/resume, completion and elapsed-time preservation when returning to focus. Mobile navigation containing-block bug and desktop row-control layout shift fixed. No horizontal overflow at 390px, 768px or 1440px. Mobile editor and schedule checked.
-- Production deployment is authorized by the user. Vercel CLI is logged out and no project is linked; deployment awaits account authentication and target project. Installed Vercel plugin has no callable deployment tools in this session.
-- External gates pending: Supabase sign-in/email redirect, CRUD/reconnect against real database, two-user isolation and SQL migration execution, Vercel preview deployment, production configuration.
-- Notification delivery: foreground reminders use a session-persisted daily decision budget (Gentle 4, Helpful 8, Proactive 12). Upcoming/start reminders share a decision key. Actual permission and notification delivery are unverified. Background web push needs a delivery worker and subscriptions before claiming reliable closed-app reminders.
-- Concurrent device edits currently resolve by latest synced snapshot; sophisticated conflict merging is deferred.
+- 12 engine tests pass, including completion retaining its scheduled time and recording its completion date.
+- TypeScript check and optimized production build pass.
+- Supabase username/password sign-in succeeds for the configured superadmin.
+- Public signup is disabled and the temporary bootstrap route is removed.
+- Permanent admin endpoint accepts an authenticated superadmin and rejects malformed creation input without leaving records.
+- Transactional database checks deny another user's task reads/writes and direct role escalation. Checks roll back entirely.
+- Interactive walkthrough, persisted color changes, real Team profile/job title and mobile Team layout verified in the browser. No horizontal overflow at 390px; no browser errors observed.
+- A task was created, finished, visibly retained in Schedule and verified as DONE in Supabase. The test task was then removed under the requested account reset. The account starts with zero tasks and first-launch walkthrough enabled.
+
+Limits: no permanent secondary test user was created. Full added-member sign-in testing remains a follow-up. Concurrent-device merging, large-account pagination and email recovery are not implemented.

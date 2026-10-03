@@ -1,9 +1,7 @@
-# to:DO architecture
+# Architecture
 
-Next.js App Router / React / TypeScript. Modular execution engine, store, task editor, focus surface, and application shell. A single task entity contains optional child actions and recurrence metadata; schedule commitments are distinct fields from deadlines. Deterministic recommendations honor manual order, exclude waiting/dependencies, and respect availability.
+Next.js App Router serves a client task interface. Supabase Auth handles username/password sessions through internal email aliases. Public signup is disabled. Managed account metadata and database row policies restrict tasks to their owner. Profiles expose enabled Team names and job titles; users can update only their own display name, job title, theme and walkthrough preference.
 
-Supabase Auth and Postgres with mandatory owner RLS. Browser uses only public anonymous credentials. No service-role key is needed. Per-user offline outbox retries idempotent task upserts; local preview is isolated from authenticated caches. Remote conflicts use last successful write and are a release limitation for concurrent devices. No realtime is necessary for this initial slice. Database supports workspace membership and assignment metadata, but MVP access stays owner-only.
+The account-admin Edge Function verifies the session and live superadmin role, creates member-only accounts, and compensates failed profile creation by removing the newly created auth record. Its service key stays server-side. The one-time initial setup route has been removed. Gateway JWT checking is enabled.
 
-No external accounts were accessible during discovery. Vercel and Supabase plugins were suggested. Do not apply migrations or deploy to production until external inspection and hosted QA are complete.
-
-Cloud snapshots include archived records (bounded to 1000 total) so archive recovery survives reload. Successfully fetched snapshots are cached. Storage failures show a clear export warning instead of falsely claiming durable persistence. Reminder delivery is modular, permission-gated, deduplicated per decision, and limited by a daily session budget.
+Tasks persist in Supabase with a per-user browser outbox for reconnect retries. No example tasks are seeded. Local dates and the timer use device time. Completing a task preserves its schedule and stores a completion timestamp. Concurrent-device edits use last-write-wins; up to 1000 tasks load per account.

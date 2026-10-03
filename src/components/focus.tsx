@@ -50,7 +50,7 @@ export function Focus({
         <span className="brand">{brand.name}</span>
       </header>
       <main>
-        <span className="eyebrow">ONE THING AT A TIME</span>
+        <span className="eyebrow">FOCUS</span>
         <span className={`context ${task.context.toLowerCase()}`}>
           {task.context}
         </span>
@@ -71,7 +71,7 @@ export function Focus({
               cy="120"
               r="104"
               fill="none"
-              stroke="#4d8eff"
+              stroke="var(--accent)"
               strokeWidth="7"
               strokeLinecap="round"
               strokeDasharray="653.45"
@@ -84,7 +84,8 @@ export function Focus({
           </svg>
           <div>
             <div className="timer">
-              {seconds>=3600&&`${String(Math.floor(seconds / 3600)).padStart(2,"0")}:`}
+              {seconds >= 3600 &&
+                `${String(Math.floor(seconds / 3600)).padStart(2, "0")}:`}
               {String(Math.floor((seconds % 3600) / 60)).padStart(2, "0")}:
               {String(seconds % 60).padStart(2, "0")}
             </div>
@@ -97,19 +98,27 @@ export function Focus({
         <div className="focus-checkpoint">
           <Clock3 size={16} />
           {task.state === "PAUSED"
-            ? "SESSION PAUSED"
+            ? "PAUSED"
             : over
-              ? "TIME TO CHECK IN"
-              : "DEEP FOCUS SESSION"}
+              ? "ESTIMATE REACHED"
+              : "RUNNING"}
         </div>
         <p>
           {task.state === "PAUSED"
-            ? "Take a breath. Your progress is here."
+            ? "Timer paused."
             : task.duration
               ? `${task.duration} min estimated · time is a checkpoint, not a deadline`
-              : "Room to make progress, at your own pace."}
+              : "No estimate."}
         </p>
-        {step && <button className="focus-step" onClick={()=>onStep(step.id)}><span className="check-circle"/><span><small className="eyebrow">TELEMETRY // MICRO-STEP</small>{step.title}</span></button>}
+        {step && (
+          <button className="focus-step" onClick={() => onStep(step.id)}>
+            <span className="check-circle" />
+            <span>
+              <small className="eyebrow">NEXT STEP</small>
+              {step.title}
+            </span>
+          </button>
+        )}
         {over && !checkpoint && (
           <div className="checkpoint">
             <strong>This has taken longer than planned.</strong>
@@ -141,7 +150,7 @@ export function Focus({
         </div>
         <button className="primary finish-focus" onClick={onDone}>
           <Check size={22} />
-          COMMIT // MARK COMPLETED
+          Done
         </button>
         <button
           className="interrupt-focus"
@@ -151,7 +160,7 @@ export function Focus({
           }}
         >
           <AlertOctagon size={20} />
-          EMERGENCY STOP // URGENT INTERRUPTION
+          Add a note
         </button>
         {interruption && (
           <form
@@ -164,7 +173,7 @@ export function Focus({
               setInterruption(false);
             }}
           >
-            <label htmlFor="focus-thought">PARK INTRUSIVE THOUGHT</label>
+            <label htmlFor="focus-thought">Note</label>
             <input
               id="focus-thought"
               autoFocus
@@ -184,12 +193,12 @@ export function Focus({
               >
                 Cancel & resume
               </button>
-              <button className="primary">Park & Resume Focus</button>
+              <button className="primary">Save & resume</button>
             </div>
           </form>
         )}
       </main>
-      <footer>You don’t have to do everything. Just this next thing.</footer>
+      <footer></footer>
     </div>
   );
 }

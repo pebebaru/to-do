@@ -1,25 +1,32 @@
 # to:DO
 
-Personal execution assistant built with Next.js, React, TypeScript, and Supabase.
+Task planning app using Next.js 16, React, TypeScript and Supabase. The interface follows the supplied Stitch design, with blue as the default and optional mint, violet, amber and rose accents.
 
-Visual design follows the existing Stitch **to:DO Execution Assistant** project, including its exact color tokens, variable font weights, command center layout, mobile critical dispatch, schedule, editor, and focus ring. See `design-system.md` and the reference screens in `design/stitch/`. Local screenshots are `preview.jpg`, `mobile-preview.jpg`, and `focus-preview.jpg`.
+## Run
 
-## Local preview
+Install dependencies with `npm install`. Copy `.env.example` to `.env.local`, set the Supabase URL and publishable key, then run `npm run dev`. Without cloud configuration the app shows a setup screen; it does not seed example tasks.
 
-Run `npm install` then `npm run dev`. With no Supabase environment variables, the application is clearly labeled device-local preview and uses editable example tasks. Preview data stays in this browser.
+## Accounts and storage
 
-## Cloud setup
+Public signup is disabled. Sign in with an administrator-created username and password. Usernames map internally to `@accounts.todo.invalid`; email delivery and password recovery are not configured. Only an enabled superadmin can create accounts through Team → Add user. Account creation always assigns the member role.
 
-1. Connect the Supabase and Vercel integrations in Codex. Inspect existing projects, migrations, policies, auth redirect URLs, environment variable names, and deployments before changes.
-2. Select/create a development Supabase project. Apply the versioned migration after review. Configure email OTP and allow your local and Vercel preview redirect URLs.
-3. Copy `.env.example` to `.env.local`; set the public Supabase URL and anonymous/publishable key. Never use a service-role key here.
-4. Configure the same environment keys on the linked Vercel project using the Next.js preset. Production deployment is authorized; this local session currently needs Vercel CLI login and a target project before deployment.
-5. Verify sign-in, CRUD, two-user isolation, offline retries, and recurrence against the real project. See qa-checklist.md.
+Supabase stores profiles, themes, onboarding preferences and tasks. Database policies isolate each user's tasks. Managed users can view enabled Team names and job titles. The account-admin Edge Function validates the session and the caller's current database role on every request. Service credentials stay in the Edge Function environment. The temporary admin bootstrap route has been removed and gateway JWT validation is enabled.
 
-## Validation
+The approved schema is in `supabase/migrations/20261003174858_account_management.sql`. Deploy the permanent function from `supabase/functions/account-admin`. Disable public signup in Supabase Auth. Never place service-role keys or passwords in browser environment variables.
 
-`npm test`, `npm run typecheck`, and `npm run build`.
+## Behavior
 
-## Current limits
+Completed tasks retain their scheduled time and remain visible in Schedule and History. Completion shows a short wordless sparkle; reduced-motion settings suppress movement. The first launch includes an interactive walkthrough. Dates and clocks use the device's local time zone. The browser caches pending task changes for retry when connectivity returns; Supabase is the persistent store.
 
-Remote infrastructure has not been inspected or changed. Background push, concurrent-device conflict merging, and collaboration screens are deferred. Foreground notification checks require explicit browser permission. Up to 1000 current records are loaded; pagination is needed before larger accounts. App icons use scalable SVG; dedicated raster Apple touch/PWA icons should be added before store/wrapper release.
+## Deployment and checks
+
+Repository: https://github.com/pebebaru/to-do
+Production: https://to-do-kappa-gules.vercel.app
+
+Set `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` in Vercel before building. Deploy directly with `vercel --prod` to the linked Pebe project. Automatic GitHub deployments are not connected.
+
+Run `npm test`, `npm run typecheck` and `npm run build`. Release checks cover sign-in, onboarding, saved theme changes, admin endpoint validation and rolled-back database checks for cross-user read/write isolation and role escalation. No persistent test users are retained.
+
+## Limits
+
+Concurrent-device edits use last-write-wins. Up to 1000 tasks are loaded; larger accounts need pagination. Background push and email recovery are not configured.

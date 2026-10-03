@@ -107,3 +107,16 @@ test("a snoozed task stays out of Next until its recovery date", () => {
   t.due = day(new Date(Date.now() + 86400000));
   assert.equal(recommend([t], 60), null);
 });
+
+test("finishing preserves the schedule and records completion without hiding the task", () => {
+  const t = newTask("Scheduled", 0);
+  t.start = "2026-10-04T09:00";
+  t.duration = 30;
+  const now = new Date("2026-10-04T10:00:00+07:00");
+  const [done] = complete(t, now);
+  assert.equal(done.start, t.start);
+  assert.equal(done.state, "DONE");
+  assert.equal(done.completedAt, now.toISOString());
+  assert.equal(done.archived, false);
+  assert.equal(recommend([done], 60), null);
+});

@@ -77,14 +77,10 @@ export function NextPanel({
               </select>
             </label>
           </div>
-          <div className="mobile-dispatch-label">
-            CRITICAL DISPATCH • EXECUTE NOW
-          </div>
+          <div className="mobile-dispatch-label">NEXT TASK</div>
           <h2>{next.title}</h2>
           <p className="dispatch-description">
-            {next.notes ||
-              next.actions.find((a) => !a.done)?.title ||
-              "Your next action. Clear a little space and move it forward."}
+            {next.notes || next.actions.find((a) => !a.done)?.title || ""}
           </p>
           <div className="dispatch-reason">
             <button
@@ -119,13 +115,11 @@ export function NextPanel({
             <div className="dispatch-actions">
               <button className="primary" onClick={() => start(next)}>
                 <Play size={18} />
-                {next.state === "ACTIVE"
-                  ? "Return to Focus"
-                  : "Start Focus Session"}
+                {next.state === "ACTIVE" ? "Continue" : "Start"}
               </button>
               <button className="secondary" onClick={() => finish(next)}>
                 <Check size={18} />
-                <span>Mark as Done</span>
+                <span>Done</span>
               </button>
               <button
                 className="icon-button mobile-snooze"
@@ -144,11 +138,9 @@ export function NextPanel({
         </>
       ) : (
         <>
-          <span className="eyebrow">YOUR NEXT STEP</span>
-          <h2>A little room to breathe.</h2>
-          <p className="dispatch-description">
-            Capture a task or choose more available time.
-          </p>
+          <span className="eyebrow">NEXT TASK</span>
+          <h2>No task ready.</h2>
+          <p className="dispatch-description">Add a task.</p>
           <label className="available">
             <select
               aria-label="Available minutes"

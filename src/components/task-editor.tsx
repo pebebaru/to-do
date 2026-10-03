@@ -2,16 +2,19 @@
 import { useState } from "react";
 import { X, Plus, Trash2 } from "lucide-react";
 import { Task } from "@/lib/engine";
+import { Profile } from "@/lib/accounts";
 export function TaskEditor({
   task,
   onSave,
   onClose,
   onDelete,
+  team,
 }: {
   task: Task;
   onSave: (t: Task) => void;
   onClose: () => void;
   onDelete: () => void;
+  team: Profile[];
 }) {
   const [draft, setDraft] = useState(task),
     [action, setAction] = useState("");
@@ -46,7 +49,7 @@ export function TaskEditor({
         }}
       >
         <header>
-          <span className="eyebrow">Task Detail & Quick Create</span>
+          <span className="eyebrow">Task</span>
           <button
             className="icon-button"
             aria-label="Close task details"
@@ -146,7 +149,12 @@ export function TaskEditor({
                 onChange={(e) =>
                   set({
                     start: e.target.value,
-                    state: e.target.value ? "SCHEDULED" : "TODO",
+                    state:
+                      draft.state === "DONE"
+                        ? "DONE"
+                        : e.target.value
+                          ? "SCHEDULED"
+                          : "TODO",
                   })
                 }
               />
@@ -168,9 +176,7 @@ export function TaskEditor({
                   onClick={() => set({ priority: p })}
                 >
                   <strong>P{p}</strong>
-                  <span>
-                    {p === 1 ? "CRITICAL" : p === 2 ? "STANDARD" : "FLEXIBLE"}
-                  </span>
+                  <span>{p === 1 ? "URGENT" : p === 2 ? "NORMAL" : "LOW"}</span>
                 </button>
               ))}
             </div>
@@ -181,21 +187,28 @@ export function TaskEditor({
               checked={draft.committed}
               onChange={(e) => set({ committed: e.target.checked })}
             />{" "}
-            I’m committing to this today
+            Today
           </label>
           <label>
-            Person / waiting for
-            <input
-              placeholder="e.g. Andre"
+            Waiting for
+            <select
               value={draft.person}
               onChange={(e) => set({ person: e.target.value })}
-            />
+            >
+              <option value="">No one</option>
+              {team.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.display_name || p.username}
+                  {p.job_title ? ` · ${p.job_title}` : ""}
+                </option>
+              ))}
+            </select>
           </label>
           <label>
             Notes & links
             <textarea
               rows={3}
-              placeholder="Keep useful context here. Paste a link, too."
+              placeholder="Add notes or links."
               value={draft.notes}
               onChange={(e) =>
                 set({
@@ -251,7 +264,7 @@ export function TaskEditor({
             </div>
           )}
           <div className="action-list">
-            <span className="eyebrow">Small steps</span>
+            <span className="eyebrow">Steps</span>
             {draft.actions.map((a) => (
               <label className="check-label" key={a.id}>
                 <input

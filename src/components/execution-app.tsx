@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ArrowDown,
   ArrowRight,
@@ -51,25 +51,29 @@ import { DayFlow } from "./day-flow";
 import { ExecutionDeck } from "./execution-deck";
 import { ScheduleView } from "./schedule-view";
 import { brand } from "@/lib/brand";
+import { useAccount } from "@/lib/use-account";
+import { SignIn } from "./sign-in";
+import { AccountPanel } from "./account-panel";
+import { TeamPanel } from "./team-panel";
+import { HowTo } from "./how-to";
+import { Celebration } from "./celebration";
 type Screen =
-  | "Today"
-  | "Inbox"
-  | "Projects"
-  | "People"
-  | "Settings"
-  | "Vault"
-  | "Analytics";
+  "Today" | "Inbox" | "Projects" | "Team" | "Settings" | "Vault" | "Analytics";
 const screens = [
-  { name: "Today", label: "Command Center", icon: Terminal },
-  { name: "Schedule", label: "Schedule & Timeline", icon: CalendarDays },
+  { name: "Today", label: "Today", icon: Terminal },
+  { name: "Schedule", label: "Schedule", icon: CalendarDays },
   { name: "Inbox", label: "Inbox", icon: Inbox },
   { name: "Projects", label: "Projects", icon: LayoutGrid },
-  { name: "People", label: "People", icon: Users },
-  { name: "Vault", label: "Vault & Archive", icon: Archive },
-  { name: "Analytics", label: "Focus Analytics", icon: Activity },
+  { name: "Team", label: "Team", icon: Users },
+  { name: "Vault", label: "History", icon: Archive },
+  { name: "Analytics", label: "Time", icon: Activity },
 ] as const;
 export function ExecutionApp() {
   const { tasks, update, user, ready, status, cloud } = useTasks();
+  const account = useAccount(user);
+  const [help, setHelp] = useState(false),
+    [celebrating, setCelebrating] = useState(false);
+  const closeCelebration = useCallback(() => setCelebrating(false), []);
   const [screen, setScreen] = useState<Screen>("Today"),
     [context, setContext] = useState<"All" | Context>("All"),
     [mode, setMode] = useState("List"),
@@ -134,7 +138,18 @@ export function ExecutionApp() {
         t.title.toLowerCase().includes(query.toLowerCase()),
     )
     .sort((a, b) => a.rank - b.rank);
-  const next = recommend(visible, available),
+  const scheduleTasks = tasks.filter(
+    (t) =>
+      !t.archived &&
+      (context === "All" || t.context === context) &&
+      t.title.toLowerCase().includes(query.toLowerCase()),
+  );
+  const next = recommend(
+      tasks.filter(
+        (t) => !t.archived && (context === "All" || t.context === context),
+      ),
+      available,
+    ),
     committed = visible.filter((t) => t.committed && t.state !== "WAITING"),
     later = visible.filter((t) => !t.committed && t.state !== "WAITING"),
     waiting = visible.filter((t) => t.state === "WAITING");
@@ -152,6 +167,7 @@ export function ExecutionApp() {
     update(tasks.map((t) => (t.id === id ? { ...t, ...p } : t)));
   }
   function finish(t: Task) {
+    if (t.state === "DONE") return;
     if (
       t.actions.some((a) => !a.done) &&
       !window.confirm("Some steps are still open. Finish this task anyway?")
@@ -159,7 +175,7 @@ export function ExecutionApp() {
       return;
     update([...tasks.filter((x) => x.id !== t.id), ...complete(t)]);
     setFocus(null);
-    setToast("Finished. A little more space in your day.");
+    setCelebrating(true);
   }
   function start(t: Task) {
     const current = tasks.find((x) => x.state === "ACTIVE" && x.id !== t.id);
@@ -171,14 +187,19 @@ export function ExecutionApp() {
     update(
       tasks.map((x) =>
         x.id === t.id
-          ? { ...x, state: "ACTIVE", seconds:elapsed(x), runningSince: Date.now() }
+          ? {
+              ...x,
+              state: "ACTIVE",
+              seconds: elapsed(x),
+              runningSince: Date.now(),
+            }
           : x.state === "ACTIVE"
             ? { ...x, state: "PAUSED", seconds: elapsed(x), runningSince: null }
             : x,
       ),
     );
     setFocus(t.id);
-    window.scrollTo(0,0);
+    window.scrollTo(0, 0);
   }
   function captureTask(e: React.FormEvent) {
     e.preventDefault();
@@ -195,7 +216,7 @@ export function ExecutionApp() {
     }
     update([...tasks, t]);
     setCapture("");
-    setToast("Captured. It’s safe in your Inbox.");
+    setToast("Added.");
   }
   function move(id: string, targetId: string) {
     const ordered = tasks
@@ -221,13 +242,14 @@ export function ExecutionApp() {
       seconds: elapsed(t),
       runningSince: null,
     });
-    setToast("Moved to tomorrow. Room to decide again.");
+    setToast("Moved to tomorrow.");
   }
   function row(t: Task) {
     return (
       <TaskRow
         key={t.id}
         t={t}
+        personName={account.team.find((p) => p.id === t.person)?.display_name}
         today={today}
         visible={visible}
         drag={drag}
@@ -250,7 +272,7 @@ export function ExecutionApp() {
             aria-label="Capture a task"
             value={capture}
             onChange={(e) => setCapture(e.target.value)}
-            placeholder="Type task title @work #p1 ~45m !tomorrow..."
+            placeholder="Add a task"
           />
           <button aria-label="Save task" disabled={!capture.trim()}>
             <span className="desktop-enter">ENTER</span>
@@ -258,14 +280,13 @@ export function ExecutionApp() {
           </button>
         </form>
         <div className="capture-syntax">
-          <span>Syntax:</span>
+          <span>Shortcuts:</span>
           <span className="syntax-tag">@tag</span>
           <span className="syntax-priority">#priority</span>
           <span className="syntax-duration">~duration</span>
           <span className="syntax-date">!date</span>
           <span className="parser-status">
             <i />
-            Quick capture ready
           </span>
         </div>
       </div>
@@ -284,9 +305,7 @@ export function ExecutionApp() {
         {items.length ? (
           items.map(row)
         ) : (
-          <div className="empty-inline">
-            A little breathing room. Add something when you’re ready.
-          </div>
+          <div className="empty-inline">No tasks.</div>
         )}
       </section>
     );
@@ -296,49 +315,32 @@ export function ExecutionApp() {
       <div className="loading">
         <img src={brand.icon} alt="" width="48" height="48" />
         <h2>{brand.name}</h2>
-        <p>Making room for your day…</p>
+        <p>Loading…</p>
       </div>
     );
-  if (cloud && !user)
+  if (!cloud)
     return (
-      <div className="auth-page">
-        <img src={brand.icon} width="56" height="56" alt="to:DO mark" />
-        <h1>
-          Less on your mind.
-          <br />
-          More in motion.
-        </h1>
-        <p>Your space to decide, do, and finish.</p>
-        <form
-          onSubmit={async (e) => {
-            e.preventDefault();
-            const { error } = await supabase!.auth.signInWithOtp({
-              email,
-              options: { emailRedirectTo: window.location.origin },
-            });
-            setAuthMessage(
-              error
-                ? error.message
-                : "Check your email for your secure sign-in link.",
-            );
-          }}
+      <main className="auth-page">
+        <h1>to:DO</h1>
+        <p>Storage is not configured.</p>
+      </main>
+    );
+  if (!user) return <SignIn />;
+  if (!account.profile)
+    return (
+      <main className="auth-page">
+        <h1>to:DO</h1>
+        <p>{account.error || "Loading account…"}</p>
+        <button className="secondary" onClick={() => void account.refresh()}>
+          Retry
+        </button>
+        <button
+          className="text-button"
+          onClick={() => supabase!.auth.signOut()}
         >
-          <label>
-            Email
-            <input
-              type="email"
-              required
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="you@example.com"
-            />
-          </label>
-          <button className="primary">
-            Send sign-in link <ArrowRight size={17} />
-          </button>
-          <p role="status">{authMessage}</p>
-        </form>
-      </div>
+          Sign out
+        </button>
+      </main>
     );
   if (active)
     return (
@@ -405,7 +407,7 @@ export function ExecutionApp() {
               aria-pressed={context === c}
               onClick={() => setContext(c)}
             >
-              {c === "All" ? "Core Ops" : c}
+              {c}
             </button>
           ))}
         </div>
@@ -452,12 +454,10 @@ export function ExecutionApp() {
             </button>
           ))}
         </nav>
-        <div className="sidebar-note">
+        <div className="sidebar-note" hidden>
           <Coffee size={22} />
           <p>
-            A little clarity.
             <br />
-            Then, a little progress.
           </p>
         </div>
         <div className="sidebar-bottom">
@@ -469,15 +469,17 @@ export function ExecutionApp() {
             }}
           >
             <Settings2 size={19} />
-            <span>System Settings</span>
+            <span>Account</span>
           </button>
           <div className="profile">
             <span className="avatar">
-              {user?.email?.[0]?.toUpperCase() || "Y"}
+              {account.profile.display_name[0]?.toUpperCase() || "U"}
             </span>
             <div>
-              <strong>{user?.email?.split("@")[0] || "Your space"}</strong>
-              <small>{cloud ? "Personal account" : "Local preview"}</small>
+              <strong>
+                {account.profile.display_name || account.profile.username}
+              </strong>
+              <small>{account.profile.job_title || "Account"}</small>
             </div>
             {user && (
               <button
@@ -500,7 +502,7 @@ export function ExecutionApp() {
                   ? "Schedule"
                   : "Today"
                 : screen === "Settings"
-                  ? "Settings"
+                  ? "Account"
                   : screen}
             </span>
             <span className="brand">
@@ -509,7 +511,7 @@ export function ExecutionApp() {
             </span>
             <span className="breadcrumb-slash">/</span>
             <div className="day-progress">
-              <span>DAY FLOW</span>
+              <span>TASKS</span>
               <div>
                 <i style={{ width: `${progress}%` }} />
               </div>
@@ -523,16 +525,21 @@ export function ExecutionApp() {
               onClick={() => setTunnel(!tunnel)}
             >
               <FocusIcon size={16} />
-              {tunnel ? "Focus Active" : "Standard View"}
+              {"Dim panels"}
               <kbd>⌘B</kbd>
             </button>
-            <button className="primary new-task" onClick={createDraft}>
+            <button
+              className="primary new-task"
+              hidden={screen === "Team" || screen === "Settings"}
+              onClick={createDraft}
+            >
               <Plus size={16} />
               New Task
             </button>
             <button
               className="icon-button"
               aria-label="Toggle Split View"
+              hidden={screen === "Team" || screen === "Settings"}
               onClick={() => {
                 setScreen("Today");
                 setMode(mode === "Split" ? "List" : "Split");
@@ -553,14 +560,14 @@ export function ExecutionApp() {
               <h1>
                 {screen === "Today"
                   ? mode === "Schedule"
-                    ? "Schedule & Timeline"
-                    : "Command Center"
+                    ? "Schedule"
+                    : "Today"
                   : screen === "Vault"
-                    ? "Vault & Archive"
+                    ? "History"
                     : screen === "Analytics"
-                      ? "Focus Analytics"
+                      ? "Time"
                       : screen === "Settings"
-                        ? "System Settings"
+                        ? "Account"
                         : screen}
               </h1>
               <span className="date-label">
@@ -571,7 +578,10 @@ export function ExecutionApp() {
                 })}
               </span>
             </div>
-            <div className="search">
+            <div
+              className="search"
+              hidden={screen === "Team" || screen === "Settings"}
+            >
               <Search size={16} />
               <input
                 aria-label="Search tasks"
@@ -581,7 +591,7 @@ export function ExecutionApp() {
               />
             </div>
           </div>
-          <div className="tunnel-banner">
+          <div className="tunnel-banner" hidden>
             <span>
               <FocusIcon size={15} />
               {tunnel
@@ -592,8 +602,11 @@ export function ExecutionApp() {
               Press <kbd>⌘B</kbd> to toggle preview
             </button>
           </div>
-          {(screen !== "Today" || mode !== "List") && captureBar()}
-          {screen !== "Settings" && (
+          {screen !== "Team" &&
+            screen !== "Settings" &&
+            (screen !== "Today" || mode !== "List") &&
+            captureBar()}
+          {screen !== "Settings" && screen !== "Team" && (
             <div className="view-toolbar">
               <div className="segments">
                 {(["All", "Personal", "Work"] as const).map((c) => (
@@ -630,7 +643,7 @@ export function ExecutionApp() {
           {screen === "Today" && mode === "List" && (
             <div className="today-layout">
               <DayFlow
-                tasks={visible}
+                tasks={scheduleTasks}
                 onEdit={setEdit}
                 onSchedule={() => setMode("Schedule")}
               />
@@ -650,11 +663,11 @@ export function ExecutionApp() {
                 {captureBar()}
                 <div className="queue secondary-panel">
                   {section("Queue", committed, "Sort: Your order")}
-                  {section("Later today • Flexible", later)}
+                  {section("Later", later)}
                 </div>
                 <div className="summary-ribbon secondary-panel">
                   <div>
-                    <span>TOTAL FOCUS TIME</span>
+                    <span>TIME SPENT</span>
                     <strong>
                       {Math.floor(
                         tasks.reduce((s, t) => s + elapsed(t), 0) / 60,
@@ -663,13 +676,13 @@ export function ExecutionApp() {
                     </strong>
                   </div>
                   <div>
-                    <span>TASKS COMPLETED</span>
+                    <span>DONE</span>
                     <strong className="positive">
                       {completed} of {total}
                     </strong>
                   </div>
                   <div>
-                    <span>AVAILABLE WINDOW</span>
+                    <span>AVAILABLE TIME</span>
                     <strong>{available} min</strong>
                   </div>
                 </div>
@@ -680,9 +693,10 @@ export function ExecutionApp() {
                 )}
                 status={status}
                 cloud={cloud}
+                team={account.team}
                 onEdit={setEdit}
                 onPeople={() => {
-                  setScreen("People");
+                  setScreen("Team");
                   setMode("List");
                 }}
               />
@@ -691,9 +705,9 @@ export function ExecutionApp() {
           {screen === "Inbox" &&
             mode === "List" &&
             section(
-              "Your captured thoughts",
+              "Inbox",
               visible.filter((t) => !t.committed),
-              "Open a task to give it context, or just start.",
+              "",
             )}
           {screen === "Projects" && mode === "List" && (
             <div className="projects">
@@ -730,29 +744,19 @@ export function ExecutionApp() {
                 ))}
               {!visible.some((t) => t.actions.length) && (
                 <div className="empty-inline">
-                  Any task can grow. Open one and add small steps.
+                  Add steps to a task to see it here.
                 </div>
               )}
             </div>
           )}
-          {screen === "People" && mode === "List" && (
-            <>
-              {[...new Set(visible.map((t) => t.person).filter(Boolean))].map(
-                (person) =>
-                  section(
-                    person,
-                    visible.filter((t) => t.person === person),
-                    "Open commitments & follow-ups",
-                  ),
-              )}
-              {!visible.some((t) => t.person) && (
-                <div className="empty-inline">
-                  Add a person to a task to keep a follow-up here.
-                </div>
-              )}
-            </>
+          {screen === "Team" && (
+            <TeamPanel
+              profile={account.profile}
+              team={account.team}
+              refresh={account.refresh}
+            />
           )}
-          {screen !== "Settings" && mode === "Split" && (
+          {screen !== "Settings" && screen !== "Team" && mode === "Split" && (
             <div className="split">
               {(["Personal", "Work"] as const)
                 .filter((c) => context === "All" || context === c)
@@ -766,24 +770,29 @@ export function ExecutionApp() {
                 ))}
             </div>
           )}
-          {screen !== "Settings" && mode === "Schedule" && (
-            <ScheduleView
-              tasks={visible}
-              onEdit={setEdit}
-              onNew={(start) =>
-                setDraftNew({
-                  ...newTask("", Math.max(-1, ...tasks.map((t) => t.rank)) + 1),
-                  start,
-                  duration: 30,
-                })
-              }
-              row={row}
-            />
-          )}
+          {screen !== "Settings" &&
+            screen !== "Team" &&
+            mode === "Schedule" && (
+              <ScheduleView
+                tasks={scheduleTasks}
+                onEdit={setEdit}
+                onNew={(start) =>
+                  setDraftNew({
+                    ...newTask(
+                      "",
+                      Math.max(-1, ...tasks.map((t) => t.rank)) + 1,
+                    ),
+                    start,
+                    duration: 30,
+                  })
+                }
+                row={row}
+              />
+            )}
           {screen === "Analytics" && (
             <section className="analytics-page">
-              <h2>Your focus, at your pace.</h2>
-              <p>Actual elapsed time across your task pool.</p>
+              <h2>Time</h2>
+              <p>Time spent on tasks.</p>
               <div className="metrics-grid">
                 {(["Personal", "Work"] as const).map((c) => (
                   <div key={c}>
@@ -812,108 +821,15 @@ export function ExecutionApp() {
           {(screen === "Settings" || screen === "Vault") && (
             <section className="settings">
               {screen === "Settings" && (
-                <>
-                  <label>
-                    Assistant style
-                    <select
-                      value={assistant}
-                      onChange={(e) => {
-                        setAssistant(e.target.value);
-                        localStorage.setItem(
-                          "todo-settings",
-                          JSON.stringify({
-                            assistant: e.target.value,
-                            notification,
-                          }),
-                        );
-                      }}
-                    >
-                      <option>Gentle</option>
-                      <option>Helpful</option>
-                      <option>Proactive</option>
-                    </select>
-                  </label>
-                  <p>
-                    {assistant === "Gentle"
-                      ? "Keep suggestions quiet; your list stays in charge."
-                      : assistant === "Helpful"
-                        ? "Explain useful next steps. Ask before changing plans."
-                        : "Show more opportunities. Every adjustment remains your choice."}
-                  </p>
-                  <hr />
-                  <h2>Useful reminders</h2>
-                  <p>
-                    While to:DO is open: upcoming commitments, follow-ups, and
-                    time checkpoints. Background push is not connected yet.
-                  </p>
-                  <button
-                    className="secondary"
-                    onClick={async () => {
-                      if (typeof Notification === "undefined") {
-                        setToast("This browser doesn’t support notifications.");
-                        return;
-                      }
-                      const granted = await Notification.requestPermission();
-                      setNotification(granted === "granted");
-                      localStorage.setItem(
-                        "todo-settings",
-                        JSON.stringify({
-                          assistant,
-                          notification: granted === "granted",
-                        }),
-                      );
-                      setToast(
-                        granted === "granted"
-                          ? "Reminders enabled while to:DO is open."
-                          : "Notification permission was not granted.",
-                      );
-                    }}
-                  >
-                    {notification ? "Reminders enabled" : "Enable reminders"}
-                  </button>
-                  {notification && (
-                    <button
-                      className="text-button"
-                      onClick={() => {
-                        setNotification(false);
-                        localStorage.setItem(
-                          "todo-settings",
-                          JSON.stringify({ assistant, notification: false }),
-                        );
-                      }}
-                    >
-                      Turn off
-                    </button>
-                  )}
-                  <hr />
-                  <h2>Your data belongs to you</h2>
-                  <p>
-                    {cloud
-                      ? "Tasks sync to your Supabase account."
-                      : "This preview stores tasks in this browser only. It does not sync between devices."}
-                  </p>
-                  <button
-                    className="secondary"
-                    onClick={() => {
-                      const url = URL.createObjectURL(
-                        new Blob([JSON.stringify(tasks, null, 2)], {
-                          type: "application/json",
-                        }),
-                      );
-                      const a = document.createElement("a");
-                      a.href = url;
-                      a.download = `to-DO-${today}.json`;
-                      a.click();
-                      URL.revokeObjectURL(url);
-                    }}
-                  >
-                    <Download size={16} />
-                    Export your tasks
-                  </button>
-                  <hr />
-                </>
+                <AccountPanel
+                  key={account.profile.id}
+                  profile={account.profile}
+                  save={account.save}
+                  onHelp={() => setHelp(true)}
+                  onMessage={setToast}
+                />
               )}
-              <h2>Finished & archived</h2>
+              <h2>History</h2>
               {tasks
                 .filter((t) => t.archived || t.state === "DONE")
                 .map((t) => (
@@ -935,7 +851,7 @@ export function ExecutionApp() {
           )}
           <footer className="content-footer">
             <span className="brand-small">{brand.name}</span>
-            <span>Less managing. More doing.</span>
+
             <span>
               {visible.length} open {visible.length === 1 ? "task" : "tasks"}
             </span>
@@ -946,6 +862,7 @@ export function ExecutionApp() {
         <TaskEditor
           key={editing.id}
           task={editing}
+          team={account.team}
           onClose={() => {
             setEdit(null);
             setDraftNew(null);
@@ -962,13 +879,28 @@ export function ExecutionApp() {
               state: "PAUSED",
             });
             setEdit(null);
-            setToast("Archived. You can restore it in Settings.");
+            setToast("Archived.");
           }}
           onSave={(t) => {
+            if (t.state === "DONE" && (draftNew || editing.state !== "DONE")) {
+              update([
+                ...tasks.filter((x) => x.id !== t.id),
+                ...complete({
+                  ...t,
+                  title: t.title.trim(),
+                  seconds: elapsed(editing),
+                  runningSince: null,
+                }),
+              ]);
+              setDraftNew(null);
+              setEdit(null);
+              setCelebrating(true);
+              return;
+            }
             if (draftNew) {
               update([...tasks, { ...t, title: t.title.trim() }]);
               setDraftNew(null);
-              setToast("Task captured.");
+              setToast("Added.");
               return;
             }
             patch(t.id, {
@@ -978,10 +910,19 @@ export function ExecutionApp() {
               runningSince: null,
             });
             setEdit(null);
-            setToast("Updated. Your plan is still yours.");
+            setToast("Saved.");
           }}
         />
       )}
+      {(help || !account.profile.onboarded) && (
+        <HowTo
+          name={account.profile.display_name || account.profile.username}
+          onDone={async () => {
+            if (await account.save({ onboarded: true })) setHelp(false);
+          }}
+        />
+      )}
+      {celebrating && <Celebration onEnd={closeCelebration} />}
       {toast && (
         <div className="toast" role="status">
           <Check size={17} />
