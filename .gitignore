@@ -1,0 +1,9 @@
+node_modules/
+.npm-cache/
+.next/
+.env*
+!.env.example
+*.tsbuildinfo
+.vercel/
+test-results/
+design/stitch/

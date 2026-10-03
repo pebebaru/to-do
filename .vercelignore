@@ -1,0 +1,9 @@
+design/
+supabase/
+tests/
+*.md
+preview.jpg
+mobile-preview.jpg
+focus-preview.jpg
+schedule-preview.jpg
+editor-preview.jpg
