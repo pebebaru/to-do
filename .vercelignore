@@ -1,8 +1,9 @@
 design/
-supabase/*
-!supabase/functions/
-supabase/functions/*
-!supabase/functions/_shared/
+supabase/migrations/
+supabase/tests/
+supabase/.temp/
+supabase/functions/account-admin/
+supabase/functions/team-tasks/
 tests/
 *.md
 preview.jpg
