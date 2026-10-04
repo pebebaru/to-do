@@ -1,5 +1,8 @@
 design/
-supabase/
+supabase/*
+!supabase/functions/
+supabase/functions/*
+!supabase/functions/_shared/
 tests/
 *.md
 preview.jpg

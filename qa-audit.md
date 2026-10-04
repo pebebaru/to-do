@@ -61,3 +61,7 @@ Q1–Q13 have code fixes in this release. The backend changes are applied to the
 ### Role boundary
 
 Normal users manage their own tasks and participate in explicitly shared tasks. Admins additionally manage normal-user accounts and team groups. Superadmins additionally manage roles and all member accounts and read the paginated System view. All roles retain normal task capabilities. Member preview hides management controls while keeping the caller's own data; it is not a change of authorization.
+
+### Deployment packaging correction
+
+The first cloud build caught an upload-only failure: `.vercelignore` excluded the shared permission module imported by the frontend. The upload rules now include `supabase/functions/_shared/` while continuing to exclude migrations and endpoint source. This explains why the local build passed while the first Vercel build failed; the cloud build must pass before this release is considered deployed.
