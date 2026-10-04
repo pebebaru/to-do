@@ -72,6 +72,11 @@ export function elapsed(t: Task, now = Date.now()) {
       : 0)
   );
 }
+export function validDate(value: string) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const parsed = new Date(value + "T12:00:00");
+  return Number.isFinite(parsed.getTime()) && day(parsed) === value;
+}
 export function parseCapture(
   text: string,
   rank: number,
@@ -88,7 +93,12 @@ export function parseCapture(
     const value = date[1].toLowerCase();
     const d = new Date(now);
     if (value === "tomorrow") d.setDate(d.getDate() + 1);
-    t.due = value === "today" || value === "tomorrow" ? day(d) : value;
+    t.due =
+      value === "today" || value === "tomorrow"
+        ? day(d)
+        : validDate(value)
+          ? value
+          : "";
     t.committed = value === "today";
   }
   t.title = text
@@ -163,7 +173,7 @@ export function complete(t: Task, now = new Date()): Task[] {
   const base =
     t.recurrence === "completion"
       ? new Date(now)
-      : new Date(`${t.due || day(now)}T12:00:00`);
+      : new Date(`${validDate(t.due) ? t.due : day(now)}T12:00:00`);
   const interval = Math.max(1, Math.min(365, Number(t.interval) || 7));
   base.setDate(base.getDate() + interval);
   while (day(base) <= day(now)) base.setDate(base.getDate() + interval);

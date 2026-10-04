@@ -49,7 +49,9 @@ export function useCollaboration(userId?: string) {
     setGroups([]);
     if (!userId) return;
     void refresh();
-    const i = setInterval(() => void refresh(), 15000);
+    const i = setInterval(() => {
+      if (document.visibilityState === "visible") void refresh();
+    }, 15000);
     window.addEventListener("focus", refresh);
     return () => {
       clearInterval(i);

@@ -29,7 +29,8 @@ export function SharedTaskDetails({
   const [tab, setTab] = useState("Task"),
     [busy, setBusy] = useState(false),
     [error, setError] = useState(""),
-    [undo, setUndo] = useState(false);
+    [undo, setUndo] = useState(false),
+    [draftVersion, setDraftVersion] = useState(task.version);
   const owner = task.owner_id === profile.id,
     manage = canManage(task, profile.id);
   const name = (id: string | null) =>
@@ -54,6 +55,12 @@ export function SharedTaskDetails({
         <strong>{name(task.assignee)}</strong>
         {task.assignee && ` · ${task.assignment_status}`}
       </p>
+      {task.version !== draftVersion && (
+        <p role="status">
+          This task has changed. Your draft is kept. Close and reopen to load
+          the latest version before saving.
+        </p>
+      )}
       <small>Updated {new Date(task.updated_at).toLocaleString()}</small>
       <div className="segments detail-tabs">
         {["Task", "Comments", "Sharing"].map((t) => (
@@ -100,12 +107,13 @@ export function SharedTaskDetails({
               </button>
             )}
             <form
-              key={task.version}
+              key={task.id}
               className="stack-form"
               onSubmit={async (e) => {
                 e.preventDefault();
                 const f = new FormData(e.currentTarget);
-                await save("update", {
+                const ok = await save("update", {
+                  version: draftVersion,
                   patch: {
                     title: f.get("title"),
                     due: f.get("due"),
@@ -114,6 +122,7 @@ export function SharedTaskDetails({
                     notes: f.get("notes"),
                   },
                 });
+                if (ok) setDraftVersion(draftVersion + 1);
               }}
             >
               <fieldset
@@ -324,7 +333,7 @@ export function SharedTaskDetails({
             <p>Visible only to these members and the owner.</p>
             {owner ? (
               <SharingForm
-                key={task.version}
+                key={task.id}
                 task={task}
                 profile={profile}
                 team={team}
@@ -358,13 +367,20 @@ export function SharingForm({
   onSave: (fields: Record<string, unknown>) => Promise<unknown>;
 }) {
   const [viewers, setViewers] = useState(task?.viewers || []),
-    [assignee, setAssignee] = useState(task?.assignee || "");
+    [assignee, setAssignee] = useState(task?.assignee || ""),
+    [baseVersion, setBaseVersion] = useState(task?.version);
   return (
     <form
       className="stack-form"
       onSubmit={(e) => {
         e.preventDefault();
-        void onSave({ viewers, assignee: assignee || null });
+        void onSave({
+          viewers,
+          assignee: assignee || null,
+          ...(baseVersion ? { version: baseVersion } : {}),
+        }).then((ok) => {
+          if (ok && baseVersion) setBaseVersion(baseVersion + 1);
+        });
       }}
     >
       {groups.length > 0 && (

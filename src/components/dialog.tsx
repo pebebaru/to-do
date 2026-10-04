@@ -24,14 +24,15 @@ export function Dialog({
     };
   }, []);
   return (
-    <div className="overlay compact-overlay" onClick={onClose}>
+    <div className="overlay compact-overlay">
+      {/* Keyboard events on this modal implement its focus trap. */}
+      {/* eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions */}
       <section
         ref={ref}
         className="editor team-dialog"
         role="dialog"
         aria-modal="true"
         aria-label={title}
-        onClick={(e) => e.stopPropagation()}
         onKeyDown={(e) => {
           if (e.key === "Escape") {
             e.stopPropagation();
@@ -40,10 +41,10 @@ export function Dialog({
           if (e.key === "Tab") {
             const nodes = Array.from(
               e.currentTarget.querySelectorAll<HTMLElement>(
-                "button,input,select,textarea,a[href]",
+                "button,input,select,textarea,a[href],summary",
               ),
             ).filter(
-              (x) => !x.hasAttribute("disabled") && x.getClientRects().length,
+              (x) => !x.matches(":disabled") && x.getClientRects().length,
             );
             const first = nodes[0],
               last = nodes.at(-1);

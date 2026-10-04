@@ -1,3 +1,4 @@
+import { isAdmin } from "../_shared/permissions.ts";
 import { createClient } from "@supabase/supabase-js";
 const origins = new Set([
   "https://to-do-kappa-gules.vercel.app",
@@ -64,7 +65,7 @@ Deno.serve(async (req: Request) => {
       return unique;
     }
     if (b.action === "group") {
-      if (actor.role !== "super_admin")
+      if (!isAdmin(actor.role))
         return reply({ error: "Admin only." }, 403);
       const name = String(b.name || "").trim();
       if (!name || name.length > 60)
@@ -112,53 +113,8 @@ Deno.serve(async (req: Request) => {
       const assignee = b.assignee || null;
       if (assignee && assignee !== user.id && !viewers.includes(assignee))
         return reply({ error: "Share with the assignee first." }, 400);
-      const { data, error } = await db
-        .from("shared_tasks")
-        .insert({
-          id: source.id,
-          owner_id: user.id,
-          viewers,
-          assignee,
-          assignment_status:
-            assignee === user.id
-              ? "accepted"
-              : assignee
-                ? "pending"
-                : "unassigned",
-          payload: {
-            ...source.payload,
-            runningSince: null,
-            state: source.state === "ACTIVE" ? "PAUSED" : source.state,
-          },
-        })
-        .select()
-        .single();
-      if (error)
-        return reply(
-          { error: "This task is already shared, or could not be shared." },
-          409,
-        );
-      const moved = await db
-        .from("tasks")
-        .update({
-          archived: true,
-          payload: {
-            ...source.payload,
-            archived: true,
-            source: "shared",
-            runningSince: null,
-          },
-        })
-        .eq("id", source.id)
-        .eq("owner_id", user.id);
-      if (moved.error) {
-        await db
-          .from("shared_tasks")
-          .delete()
-          .eq("id", source.id)
-          .eq("owner_id", user.id);
-        return reply({ error: "Could not move task to Team." }, 500);
-      }
+      const { data, error } = await db.rpc("share_work_task", { actor_id: user.id, task_id: source.id, recipients: viewers, assigned: assignee });
+      if (error) return reply({ error: "Task changed or already shared. Refresh and try again." }, 409);
       return reply({ task: data });
     }
     if (!uuid(b.id)) return reply({ error: "Choose a shared task." }, 400);

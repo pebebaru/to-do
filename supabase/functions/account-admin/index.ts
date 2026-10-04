@@ -1,3 +1,4 @@
+import { isAdmin, isRole, canAssignRole, canManageMember } from "../_shared/permissions.ts";
 import { createClient } from "@supabase/supabase-js";
 const origins = new Set([
   "https://to-do-kappa-gules.vercel.app",
@@ -40,7 +41,7 @@ Deno.serve(async (req: Request) => {
       .select("role,enabled")
       .eq("id", auth.user.id)
       .single();
-    if (!actor?.enabled || actor.role !== "super_admin")
+    if (!actor?.enabled || !auth.user.app_metadata.managed_account || !isAdmin(actor.role))
       return reply({ error: "Admin only." }, 403);
     if (body.action === "list") {
       const { data, error } = await admin
@@ -53,13 +54,30 @@ Deno.serve(async (req: Request) => {
         ? reply({ error: "Could not load members." }, 500)
         : reply({ members: data });
     }
-    if (["edit", "access", "reset-password"].includes(body.action)) {
+    if (body.action === "system") {
+      if (actor.role !== "super_admin") return reply({ error: "Superadmin only." }, 403);
+      const offset = Number.isInteger(body.offset) && body.offset >= 0 ? body.offset : 0;
+      const [profiles, tasks, shared] = await Promise.all([
+        admin.from("profiles").select("id", { count: "exact", head: true }),
+        admin.from("tasks").select("id,owner_id,title,context,state,archived,payload", { count: "exact" }).order("created_at").order("id").range(offset, offset + 49),
+        admin.from("shared_tasks").select("id,owner_id,payload,updated_at", { count: "exact" }).order("updated_at").order("id").range(offset, offset + 49),
+      ]);
+      if (profiles.error || tasks.error || shared.error) return reply({ error: "Could not load system records." }, 500);
+      return reply({ accounts: profiles.count, privateCount: tasks.count, sharedCount: shared.count, tasks: tasks.data, shared: shared.data, offset });
+    }
+    if (["edit", "role", "access", "reset-password"].includes(body.action)) {
       const { data: target } = await admin
         .from("profiles")
         .select("id,role")
         .eq("id", String(body.id || ""))
         .single();
       if (!target) return reply({ error: "Member unavailable." }, 404);
+      if (!canManageMember(actor.role, target.role)) return reply({ error: "You can manage normal users only." }, 403);
+      if (body.action === "role") {
+        if (actor.role !== "super_admin" || !isRole(body.role)) return reply({ error: "Superadmin and a valid role required." }, 403);
+        const { error } = await admin.rpc("manage_member", { actor_id: auth.user.id, target_id: target.id, new_role: body.role });
+        return error ? reply({ error: "Role unchanged. Keep your own access and an enabled superadmin." }, 400) : reply({ ok: true });
+      }
       if (body.action === "edit") {
         const name = String(body.name || "").trim(),
           job = String(body.job_title || "").trim();
@@ -73,11 +91,11 @@ Deno.serve(async (req: Request) => {
           ? reply({ error: "Could not update member." }, 500)
           : reply({ ok: true });
       }
-      if (target.role === "super_admin")
+      if (target.id === auth.user.id)
         return reply(
           {
             error:
-              "Use Account for your own password. Superadmin access cannot be disabled here.",
+              "Use Account for your own password. Your own access cannot be disabled here.",
           },
           400,
         );
@@ -93,6 +111,11 @@ Deno.serve(async (req: Request) => {
       }
       if (typeof body.enabled !== "boolean")
         return reply({ error: "Choose enable or disable." }, 400);
+      // Disable database access first. A failed Auth update remains fail-closed.
+      if (!body.enabled) {
+        const { error } = await admin.rpc("manage_member", { actor_id: auth.user.id, target_id: target.id, new_enabled: false });
+        if (error) return reply({ error: "Access unchanged. Keep an enabled superadmin." }, 400);
+      }
       const { error: authChange } = await admin.auth.admin.updateUserById(
         target.id,
         {
@@ -101,10 +124,7 @@ Deno.serve(async (req: Request) => {
         },
       );
       if (authChange) return reply({ error: "Could not change access." }, 500);
-      const { error } = await admin
-        .from("profiles")
-        .update({ enabled: body.enabled })
-        .eq("id", target.id);
+      const { error } = body.enabled ? await admin.rpc("manage_member", { actor_id: auth.user.id, target_id: target.id, new_enabled: true }) : { error: null };
       return error
         ? reply({ error: "Could not save access. Retry." }, 500)
         : reply({ ok: true });
@@ -130,7 +150,8 @@ Deno.serve(async (req: Request) => {
         },
         400,
       );
-    const role = "user";
+    const role = body.role === undefined ? "user" : body.role;
+    if (!isRole(role) || !canAssignRole(actor.role, role)) return reply({ error: "You cannot assign that role." }, 403);
     const { data, error } = await admin.auth.admin.createUser({
       email: `${username}@accounts.todo.invalid`,
       password,

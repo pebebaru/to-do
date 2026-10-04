@@ -62,7 +62,7 @@ export function Focus({
               cy="120"
               r="104"
               fill="none"
-              stroke="#282a2f"
+              stroke="var(--border)"
               strokeWidth="5"
               strokeDasharray="4 6"
             />
@@ -176,7 +176,6 @@ export function Focus({
             <label htmlFor="focus-thought">Note</label>
             <input
               id="focus-thought"
-              autoFocus
               value={thought}
               onChange={(e) => setThought(e.target.value)}
               placeholder="Note request or idea (saved to inbox)..."

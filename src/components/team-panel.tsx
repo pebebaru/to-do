@@ -1,7 +1,7 @@
 "use client";
 import { useState } from "react";
 import { MoreHorizontal, Plus, Search } from "lucide-react";
-import { Profile } from "@/lib/accounts";
+import { Profile, isAdmin, canManageMember, roleLabel } from "@/lib/accounts";
 import { supabase } from "@/lib/supabase";
 import type { Task } from "@/lib/engine";
 import type { SharedTask, TeamGroup } from "@/lib/collaboration";
@@ -41,7 +41,7 @@ export function TeamPanel({
     [message, setMessage] = useState(""),
     [busy, setBusy] = useState(false),
     [showDone, setShowDone] = useState(true);
-  const admin = profile.role === "super_admin";
+  const admin = isAdmin(profile.role);
   const available = privateTasks.filter(
     (t) =>
       t.context === "Work" &&
@@ -196,13 +196,11 @@ export function TeamPanel({
                 @{p.username}
                 {p.id === profile.id ? " · You" : ""}
               </small>
-              <span className="role-badge">
-                {p.enabled
-                  ? p.role === "super_admin"
-                    ? "Superadmin"
-                    : "Member"
-                  : "Disabled"}
-              </span>
+              {(admin || !p.enabled) && (
+                <span className="role-badge">
+                  {p.enabled ? roleLabel(p.role) : "Disabled"}
+                </span>
+              )}
             </div>
             <button
               className="icon-button member-menu"
@@ -273,6 +271,7 @@ export function TeamPanel({
                       password: f.get("password"),
                       name: f.get("name"),
                       job_title: f.get("job_title"),
+                      role: f.get("role") || "user",
                     }),
                   "User added. Share their credentials privately.",
                 )
@@ -302,6 +301,18 @@ export function TeamPanel({
                 <input name="job_title" maxLength={100} />
               </label>
               <label>
+                Role
+                <select name="role" defaultValue="user">
+                  <option value="user">Normal User</option>
+                  {profile.role === "super_admin" && (
+                    <>
+                      <option value="admin">Admin</option>
+                      <option value="super_admin">Superadmin</option>
+                    </>
+                  )}
+                </select>
+              </label>
+              <label>
                 Temporary password
                 <input
                   name="password"
@@ -322,12 +333,11 @@ export function TeamPanel({
       {member && (
         <Dialog title={member.display_name} onClose={() => setMember(null)}>
           <p>
-            @{member.username} ·{" "}
-            {member.role === "super_admin" ? "Superadmin" : "Member"}
+            @{member.username} · {admin ? roleLabel(member.role) : ""}
             {member.enabled ? "" : " · Disabled"}
           </p>
           <p>{member.job_title || "Job title not set"}</p>
-          {admin && (
+          {admin && canManageMember(profile.role, member.role) && (
             <>
               <form
                 className="stack-form"
@@ -369,7 +379,35 @@ export function TeamPanel({
                   <button className="primary">Save member</button>
                 </fieldset>
               </form>
-              {member.role !== "super_admin" && (
+              {profile.role === "super_admin" && member.id !== profile.id && (
+                <form
+                  className="stack-form"
+                  onSubmit={async (e) => {
+                    e.preventDefault();
+                    const role = new FormData(e.currentTarget).get("role");
+                    if (
+                      await run(
+                        () => accountAction("role", { id: member.id, role }),
+                        "Role updated.",
+                      )
+                    )
+                      setMember(null);
+                  }}
+                >
+                  <label>
+                    Role
+                    <select name="role" defaultValue={member.role}>
+                      <option value="user">Normal User</option>
+                      <option value="admin">Admin</option>
+                      <option value="super_admin">Superadmin</option>
+                    </select>
+                  </label>
+                  <button className="secondary" disabled={busy}>
+                    Save role
+                  </button>
+                </form>
+              )}
+              {member.id !== profile.id && (
                 <>
                   <details>
                     <summary>Reset password</summary>

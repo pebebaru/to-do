@@ -1,6 +1,6 @@
 # to:DO
 
-Task planning app using Next.js 16, React, TypeScript and Supabase. The interface follows the supplied Stitch design, with blue as the default and optional mint, violet, amber and rose accents.
+Task planning app using Next.js 16, React, TypeScript and Supabase. The interface follows the supplied Stitch design, with blue as the default and ten complete, accessible color palettes. The visual selector has no visible theme names.
 
 ## Run
 
@@ -8,7 +8,7 @@ Install dependencies with `npm install`. Copy `.env.example` to `.env.local`, se
 
 ## Accounts and storage
 
-Public signup is disabled. Sign in with an administrator-created username and password. Usernames map internally to `@accounts.todo.invalid`; email delivery and password recovery are not configured. Only an enabled superadmin can create accounts through Team → Add user. Account creation always assigns the member role.
+Public signup is disabled. Sign in with an administrator-created username and password. Usernames map internally to `@accounts.todo.invalid`; email delivery and password recovery are not configured. Enabled Admins can create and manage normal users through Team → Add user. Superadmins can create and manage all three roles (Superadmin, Admin, Normal User), inspect all records through Account → System, and preview the member interface using their own data. Admins cannot manage higher roles or open System. Role changes and self-access protections are enforced in the backend; job titles are independent.
 
 Supabase stores profiles, themes, onboarding preferences and tasks. Database policies isolate each user's tasks. Managed users can view enabled Team names and job titles. The account-admin Edge Function validates the session and the caller's current database role on every request. Service credentials stay in the Edge Function environment. The temporary admin bootstrap route has been removed and gateway JWT validation is enabled.
 
@@ -25,7 +25,7 @@ Production: https://to-do-kappa-gules.vercel.app
 
 Set `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` in Vercel before building. Deploy directly with `vercel --prod` to the linked Pebe project. Automatic GitHub deployments are not connected.
 
-Run `npm test`, `npm run typecheck` and `npm run build`. Release checks cover sign-in, onboarding, saved theme changes, admin endpoint validation and rolled-back database checks for cross-user read/write isolation and role escalation. No persistent test users are retained.
+Run `npm test`, `npm run lint`, `npm run typecheck` and `npm run build`. See [qa-audit.md](qa-audit.md) for the current findings, verification evidence and remaining coverage gaps. Release checks cover sign-in, onboarding, saved theme changes, admin endpoint validation and rolled-back database checks for cross-user read/write isolation and role escalation. No persistent test users are retained.
 
 ## Limits
 
@@ -38,3 +38,9 @@ Team includes member search, groups, job titles and account actions. Superadmins
 Share a saved, non-repeating Work task with selected members. It moves from your private list to Team. Personal and repeating tasks remain private. Groups select recipients at sharing time; later group edits do not change existing task access. Assignment supports accept, decline and taking an unassigned task. The owner and accepted assignee can edit, run the timer and complete the task. Participants can comment and request a date change; the owner approves it. Handoff notes, completion timestamps and scheduled times persist in Supabase.
 
 Apply `supabase/migrations/20261003185216_team_collaboration.sql` and deploy both `account-admin` and `team-tasks` with gateway JWT validation enabled. Shared writes go through the function, which checks live account access and task membership on every request.
+
+## Audit improvements
+
+Apply migrations in timestamp order, including `20261003215025_roles_themes_and_data_integrity.sql` and `20261004044450_cache_live_access_checks.sql`. Deploy both Edge Functions with `_shared/permissions.ts` included and JWT verification enabled. Sharing and timer banking happen in one database transaction. Private-task deletions are saved in the retry outbox, so undoing a recurring completion survives reopening.
+
+Semantic theme tokens live in `src/lib/themes.ts`; defaults, spacing, radius and motion tokens live in `src/app/design-tokens.css`. The existing screens use allowlisted URL hashes for refresh and browser navigation. Ambient motion and completion effects honor reduced-motion preferences.

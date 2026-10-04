@@ -12,7 +12,10 @@ export function useTasks() {
     syncNow = useRef<() => Promise<void>>(async () => {}),
     dirty = useRef(false),
     loaded = useRef(false),
-    generation = useRef(0);
+    generation = useRef(0),
+    removed = useRef<string[]>([]);
+  const userId = user?.id;
+  const [reload, setReload] = useState(0);
   latest.current = tasks;
   function cache(key: string, value: unknown) {
     try {
@@ -24,7 +27,6 @@ export function useTasks() {
   useEffect(() => {
     try {
       localStorage.removeItem("todo-preview");
-      localStorage.removeItem("todo-settings");
     } catch {}
     if (!supabase) {
       setReady(true);
@@ -40,28 +42,34 @@ export function useTasks() {
   useEffect(() => {
     loaded.current = false;
     dirty.current = false;
+    removed.current = [];
     generation.current++;
     setTasks([]);
     setReady(false);
-    if (!supabase || !user) {
+    if (!supabase || !userId) {
       setReady(true);
       setStatus("Sign in");
       return;
     }
     let cancelled = false;
-    const key = `todo-v2-${user.id}`;
+    const key = `todo-v2-${userId}`;
     void (async () => {
-      let pending: { tasks: Task[]; pending: boolean } | null = null;
+      let pending: {
+        tasks: Task[];
+        pending: boolean;
+        removed?: string[];
+      } | null = null;
       try {
         pending = JSON.parse(localStorage.getItem(key) || "null");
       } catch {}
       const { data, error } = await supabase
         .from("tasks")
         .select("payload")
-        .eq("owner_id", user.id)
+        .eq("owner_id", userId)
         .order("rank")
         .limit(1000);
       if (cancelled) return;
+      removed.current = pending?.removed || [];
       if (error) {
         setTasks(pending?.tasks || []);
         dirty.current = !!pending?.pending;
@@ -82,17 +90,28 @@ export function useTasks() {
     return () => {
       cancelled = true;
     };
-  }, [user]);
+  }, [userId, reload]);
   function update(next: Task[]) {
-    if (!user || !supabase) return;
+    if (!userId || !supabase) return;
+    const nextIds = new Set(next.map((t) => t.id));
+    removed.current = [
+      ...new Set([
+        ...removed.current,
+        ...latest.current.filter((t) => !nextIds.has(t.id)).map((t) => t.id),
+      ]),
+    ].filter((id) => !nextIds.has(id));
     latest.current = next;
     setTasks(next);
     dirty.current = true;
-    cache(`todo-v2-${user.id}`, { tasks: next, pending: true });
+    cache(`todo-v2-${userId}`, {
+      tasks: next,
+      pending: true,
+      removed: removed.current,
+    });
     setStatus("Saving…");
   }
   useEffect(() => {
-    if (!supabase || !user || !ready) return;
+    if (!supabase || !userId || !ready) return;
     let busy = false,
       cancelled = false;
     const epoch = generation.current;
@@ -107,48 +126,64 @@ export function useTasks() {
         return;
       const snapshot = latest.current;
       busy = true;
-      if (!snapshot.length) {
-        dirty.current = false;
-        busy = false;
-        cache(`todo-v2-${user!.id}`, { tasks: [], pending: false });
-        setStatus("Saved");
-        return;
+      const deleting = [...removed.current];
+      if (deleting.length) {
+        const { error } = await supabase!
+          .from("tasks")
+          .delete()
+          .eq("owner_id", userId!)
+          .in("id", deleting);
+        if (cancelled || epoch !== generation.current) return;
+        if (error) {
+          busy = false;
+          setStatus("Not saved yet. Retrying…");
+          return;
+        }
+        removed.current = removed.current.filter(
+          (id) => !deleting.includes(id),
+        );
       }
-      const { error } = await supabase!.from("tasks").upsert(
-        snapshot.map((t) => ({
-          id: t.id,
-          owner_id: user!.id,
-          title: t.title,
-          context: t.context,
-          state: t.state,
-          rank: t.rank,
-          due: t.due || null,
-          archived: t.archived,
-          payload: t,
-        })),
-      );
+      const { error } = snapshot.length
+        ? await supabase!.from("tasks").upsert(
+            snapshot.map((t) => ({
+              id: t.id,
+              owner_id: userId!,
+              title: t.title,
+              context: t.context,
+              state: t.state,
+              rank: t.rank,
+              due: t.due || null,
+              archived: t.archived,
+              payload: t,
+            })),
+          )
+        : { error: null };
       busy = false;
       if (cancelled || epoch !== generation.current) return;
       if (error) {
         setStatus("Not saved yet. Retrying…");
         return;
       }
-      if (latest.current === snapshot) {
+      if (latest.current === snapshot && !removed.current.length) {
         dirty.current = false;
-        cache(`todo-v2-${user!.id}`, { tasks: snapshot, pending: false });
+        cache(`todo-v2-${userId}`, { tasks: snapshot, pending: false });
         setStatus("Saved");
       }
     }
     const timer = setInterval(() => void sync(), 1500);
     syncNow.current = sync;
-    window.addEventListener("online", sync);
+    const reconnect = () => {
+      if (dirty.current) void sync();
+      else setReload((n) => n + 1);
+    };
+    window.addEventListener("online", reconnect);
     return () => {
       cancelled = true;
       syncNow.current = async () => {};
       clearInterval(timer);
-      window.removeEventListener("online", sync);
+      window.removeEventListener("online", reconnect);
     };
-  }, [user, ready]);
+  }, [userId, ready]);
   return {
     tasks,
     update,
@@ -156,6 +191,7 @@ export function useTasks() {
     ready,
     status,
     cloud: !!supabase,
-    retry: () => void syncNow.current(),
+    retry: () =>
+      dirty.current ? void syncNow.current() : setReload((n) => n + 1),
   };
 }

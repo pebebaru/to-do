@@ -14,6 +14,8 @@ export function HowTo({ name, onDone }: { name: string; onDone: () => void }) {
   }, []);
   return (
     <div className="overlay tutorial-overlay">
+      {/* Keyboard events on this modal implement its focus trap. */}
+      {/* eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions */}
       <section
         className="how-to"
         ref={ref}
@@ -54,7 +56,6 @@ export function HowTo({ name, onDone }: { name: string; onDone: () => void }) {
             <label>
               Practice task
               <input
-                autoFocus
                 value={task}
                 onChange={(e) => setTask(e.target.value)}
                 placeholder="Write a note"

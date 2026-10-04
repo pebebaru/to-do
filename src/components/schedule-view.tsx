@@ -7,6 +7,7 @@ import {
   Plus,
   Clock3,
 } from "lucide-react";
+import { timelineColumns } from "@/lib/timeline";
 import { day, overlaps, type Task } from "@/lib/engine";
 export function ScheduleView({
   tasks,
@@ -29,6 +30,7 @@ export function ScheduleView({
   const blocks = tasks
     .filter((t) => t.start && dates.includes(day(new Date(t.start))))
     .sort((a, b) => a.start.localeCompare(b.start));
+  const columns = timelineColumns(blocks);
   const move = (direction: number) => {
     const d = new Date(`${date}T12:00:00`);
     d.setDate(d.getDate() + direction * range);
@@ -154,14 +156,17 @@ export function ScheduleView({
                             className={`timeline-event ${t.context.toLowerCase()} ${t.state === "DONE" ? "completed-block" : ""} ${conflict ? "overlapping" : ""}`}
                             style={{
                               top,
+                              left: `calc(${(columns.get(t.id)!.column / columns.get(t.id)!.columns) * 100}% + 4px)`,
+                              width: `calc(${100 / columns.get(t.id)!.columns}% - 8px)`,
                               height: Math.max(
-                                48,
+                                64,
                                 Math.min(
                                   832 - top,
                                   ((t.duration || 30) / 60) * 64,
                                 ),
                               ),
                             }}
+                            aria-label={`${t.title}, ${starts.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}, ${t.duration || 30} minutes${conflict ? ", overlaps another task" : ""}`}
                             onClick={() => onEdit(t.id)}
                           >
                             <span>

@@ -1,14 +1,17 @@
 "use client";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { User } from "@supabase/supabase-js";
 import { supabase } from "./supabase";
-import { Profile, themes } from "./accounts";
+import { type Profile, themes, resolveTheme, isAdmin } from "./accounts";
 export function useAccount(user: User | null) {
+  const id = user?.id;
+  const current = useRef(id);
+  current.current = id;
   const [profile, setProfile] = useState<Profile | null>(null),
     [team, setTeam] = useState<Profile[]>([]),
     [error, setError] = useState("");
   const refresh = useCallback(async () => {
-    if (!supabase || !user) {
+    if (!supabase || !id) {
       setProfile(null);
       setTeam([]);
       return;
@@ -18,52 +21,57 @@ export function useAccount(user: User | null) {
       .select("id,username,display_name,job_title,role,theme,onboarded,enabled")
       .eq("enabled", true)
       .order("display_name");
+    if (current.current !== id) return;
     if (result.error) {
-      setError("Could not load your account.");
+      setError("Could not load your account. Retry.");
       return;
     }
     let people = result.data as Profile[];
-    if (people.find((p) => p.id === user.id)?.role === "super_admin") {
-      const { data, error } = await supabase.functions.invoke("account-admin", {
+    const me = people.find((p) => p.id === id);
+    if (me && isAdmin(me.role)) {
+      const { data } = await supabase.functions.invoke("account-admin", {
         body: { action: "list" },
       });
-      if (!error && data?.members) people = data.members;
+      if (data?.members) people = data.members;
     }
+    if (current.current !== id) return;
     setTeam(people);
-    setProfile(people.find((p) => p.id === user.id) || null);
-    setError("");
-  }, [user]);
+    setProfile(people.find((p) => p.id === id) || null);
+    setError(me ? "" : "Account unavailable. Contact your administrator.");
+  }, [id]);
   useEffect(() => {
+    setProfile(null);
+    setTeam([]);
     void refresh();
+    const visibleRefresh = () => {
+      if (document.visibilityState === "visible") void refresh();
+    };
+    const timer = setInterval(visibleRefresh, 60000);
+    window.addEventListener("focus", visibleRefresh);
+    return () => {
+      clearInterval(timer);
+      window.removeEventListener("focus", visibleRefresh);
+    };
   }, [refresh]);
   useEffect(() => {
-    document.documentElement.style.setProperty(
-      "--accent",
-      themes[profile?.theme || "blue"],
-    );
-    document.documentElement.style.setProperty(
-      "--primary",
-      profile?.theme === "blue" || !profile
-        ? "#adc6ff"
-        : `color-mix(in srgb, ${themes[profile.theme]} 55%, white)`,
-    );
-    document.documentElement.dataset.theme = profile?.theme || "blue";
-    return () => {
-      delete document.documentElement.dataset.theme;
-    };
+    const theme = resolveTheme(profile?.theme);
+    for (const [key, value] of Object.entries(themes[theme].tokens))
+      document.documentElement.style.setProperty(`--${key}`, value);
+    document.documentElement.dataset.theme = theme;
   }, [profile?.theme]);
   async function save(
     patch: Partial<
       Pick<Profile, "display_name" | "job_title" | "theme" | "onboarded">
     >,
   ) {
-    if (!supabase || !user) return false;
+    if (!supabase || !id) return false;
     const result = await supabase
       .from("profiles")
       .update(patch)
-      .eq("id", user.id)
+      .eq("id", id)
       .select("id")
       .single();
+    if (current.current !== id) return false;
     if (result.error) {
       setError("Could not save your account.");
       return false;

@@ -1,17 +1,10 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  ArrowDown,
   ArrowRight,
-  ArrowUp,
   CalendarDays,
   Check,
-  ChevronDown,
-  CircleHelp,
-  Clock3,
   Coffee,
-  Download,
-  GripVertical,
   Inbox,
   LayoutGrid,
   List,
@@ -19,14 +12,12 @@ import {
   Plus,
   Search,
   Settings2,
-  Sun,
   Users,
   X,
   Terminal,
   Activity,
   Archive,
   Focus as FocusIcon,
-  Keyboard,
 } from "lucide-react";
 import {
   complete,
@@ -35,8 +26,6 @@ import {
   elapsed,
   newTask,
   parseCapture,
-  overlaps,
-  reasons,
   recommend,
   Task,
 } from "@/lib/engine";
@@ -59,6 +48,7 @@ import { HowTo } from "./how-to";
 import { Celebration } from "./celebration";
 import { useCollaboration } from "@/lib/use-collaboration";
 import { SharedTaskDetails } from "./shared-task-details";
+import { SystemPanel } from "./system-panel";
 import { canManage } from "@/lib/collaboration";
 type Screen =
   "Today" | "Inbox" | "Projects" | "Team" | "Settings" | "Vault" | "Analytics";
@@ -74,6 +64,11 @@ const screens = [
 export function ExecutionApp() {
   const { tasks, update, user, ready, status, cloud, retry } = useTasks();
   const account = useAccount(user);
+  const [memberPreview, setMemberPreview] = useState(false);
+  const memberProfile =
+    account.profile && memberPreview
+      ? { ...account.profile, role: "user" as const }
+      : account.profile;
   const collaboration = useCollaboration(user?.id);
   const [sharedEdit, setSharedEdit] = useState<string | null>(null),
     [sharedUndo, setSharedUndo] = useState<{
@@ -102,8 +97,6 @@ export function ExecutionApp() {
     [why, setWhy] = useState(false),
     [available, setAvailable] = useState(60),
     [toast, setToast] = useState(""),
-    [email, setEmail] = useState(""),
-    [authMessage, setAuthMessage] = useState(""),
     [assistant, setAssistant] = useState("Helpful"),
     [notification, setNotification] = useState(false),
     [drag, setDrag] = useState<string | null>(null),
@@ -111,6 +104,53 @@ export function ExecutionApp() {
   const [tunnel, setTunnel] = useState(false);
   const [draftNew, setDraftNew] = useState<Task | null>(null);
   const input = useRef<HTMLInputElement>(null);
+  const navigationReady = useRef(false);
+  useEffect(() => {
+    const read = () => {
+      const value = location.hash.slice(1);
+      if (value === "Schedule") {
+        setScreen("Today");
+        setMode("Schedule");
+      } else if (
+        [
+          "Today",
+          "Inbox",
+          "Projects",
+          "Team",
+          "Settings",
+          "Vault",
+          "Analytics",
+        ].includes(value)
+      ) {
+        setScreen(value as Screen);
+        setMode("List");
+      }
+    };
+    read();
+    window.addEventListener("popstate", read);
+    window.addEventListener("hashchange", read);
+    return () => {
+      window.removeEventListener("popstate", read);
+      window.removeEventListener("hashchange", read);
+    };
+  }, []);
+  useEffect(() => {
+    if (!navigationReady.current) {
+      navigationReady.current = true;
+      return;
+    }
+    const value =
+      screen === "Today" && mode === "Schedule" ? "Schedule" : screen;
+    if (location.hash !== "#" + value) history.pushState(null, "", "#" + value);
+  }, [screen, mode]);
+  useEffect(() => {
+    setMemberPreview(false);
+    setEdit(null);
+    setFocus(null);
+    setDraftNew(null);
+    setSharedEdit(null);
+    setToast("");
+  }, [user?.id]);
   useEffect(() => {
     try {
       const settings = JSON.parse(
@@ -122,7 +162,9 @@ export function ExecutionApp() {
     const key = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === "k") {
         e.preventDefault();
-        input.current?.focus();
+        setScreen("Today");
+        setMode("List");
+        requestAnimationFrame(() => input.current?.focus());
       }
       if (e.key === "Escape") {
         setEdit(null);
@@ -189,8 +231,7 @@ export function ExecutionApp() {
       available,
     ),
     committed = visible.filter((t) => t.committed && t.state !== "WAITING"),
-    later = visible.filter((t) => !t.committed && t.state !== "WAITING"),
-    waiting = visible.filter((t) => t.state === "WAITING");
+    later = visible.filter((t) => !t.committed && t.state !== "WAITING");
   const active = [
     ...collaboration.tasks.map((t) => t.payload),
     ...tasks.filter((t) => !t.archived),
@@ -216,7 +257,9 @@ export function ExecutionApp() {
   function patch(id: string, p: Partial<Task>) {
     const shared = collaboration.tasks.find((t) => t.id === id);
     if (shared) {
-      const { seconds, runningSince, ...fields } = p;
+      const fields = { ...p };
+      delete fields.seconds;
+      delete fields.runningSince;
       void collaboration
         .act(p.state === "PAUSED" ? "pause" : "update", {
           id,
@@ -615,15 +658,25 @@ export function ExecutionApp() {
             title,
             Math.max(-1, ...tasks.map((x) => x.rank)) + 1,
           );
-          if (t.title)
-            update([
-              ...tasks.map((x) =>
-                x.id === active.id
-                  ? { ...x, state: "ACTIVE" as const, runningSince: Date.now() }
-                  : x,
-              ),
-              t,
-            ]);
+          if (t.title) {
+            update([...tasks, t]);
+            if (collaboration.tasks.some((s) => s.id === active.id))
+              start(active);
+            else
+              update([
+                ...tasks.map((x) =>
+                  x.id === active.id
+                    ? {
+                        ...x,
+                        state: "ACTIVE" as const,
+                        seconds: elapsed(x),
+                        runningSince: Date.now(),
+                      }
+                    : x,
+                ),
+                t,
+              ]);
+          }
         }}
       />
     );
@@ -708,6 +761,7 @@ export function ExecutionApp() {
         </div>
         <div className="sidebar-bottom">
           <button
+            aria-label="Account"
             className={screen === "Settings" ? "nav-item selected" : "nav-item"}
             onClick={() => {
               setScreen("Settings");
@@ -800,6 +854,12 @@ export function ExecutionApp() {
           </div>
         </header>
         <main className="content">
+          {memberPreview && (
+            <div className="save-feedback" role="status">
+              Member view
+              <button onClick={() => setMemberPreview(false)}>Exit</button>
+            </div>
+          )}
           {status !== "Saved" && status !== "Sign in" && (
             <div className="save-feedback" role="status">
               {status}
@@ -953,7 +1013,7 @@ export function ExecutionApp() {
                     <span>TIME SPENT</span>
                     <strong>
                       {Math.floor(
-                        tasks.reduce((s, t) => s + elapsed(t), 0) / 60,
+                        myTasks.reduce((s, t) => s + elapsed(t), 0) / 60,
                       )}{" "}
                       min
                     </strong>
@@ -971,13 +1031,13 @@ export function ExecutionApp() {
                 </div>
               </div>
               <ExecutionDeck
-                tasks={tasks.filter(
+                tasks={myTasks.filter(
                   (t) => context === "All" || t.context === context,
                 )}
                 status={status}
                 cloud={cloud}
                 team={account.team}
-                onEdit={setEdit}
+                onEdit={openTask}
                 onPeople={() => {
                   setScreen("Team");
                   setMode("List");
@@ -1034,7 +1094,7 @@ export function ExecutionApp() {
           )}
           {screen === "Team" && (
             <TeamPanel
-              profile={account.profile}
+              profile={memberProfile!}
               team={account.team}
               refresh={account.refresh}
               tasks={collaboration.tasks}
@@ -1043,11 +1103,18 @@ export function ExecutionApp() {
               act={collaboration.act}
               onSelect={setSharedEdit}
               onShared={(id) =>
-                patch(id, {
-                  archived: true,
-                  source: "shared",
-                  runningSince: null,
-                })
+                update(
+                  tasks.map((t) =>
+                    t.id === id
+                      ? {
+                          ...t,
+                          archived: true,
+                          source: "shared",
+                          runningSince: null,
+                        }
+                      : t,
+                  ),
+                )
               }
             />
           )}
@@ -1094,7 +1161,7 @@ export function ExecutionApp() {
                     <span>{c.toUpperCase()}</span>
                     <strong>
                       {Math.floor(
-                        tasks
+                        myTasks
                           .filter((t) => t.context === c)
                           .reduce((s, t) => s + elapsed(t), 0) / 60,
                       )}{" "}
@@ -1102,7 +1169,7 @@ export function ExecutionApp() {
                     </strong>
                     <small>
                       {
-                        tasks.filter(
+                        myTasks.filter(
                           (t) => t.context === c && t.state === "DONE",
                         ).length
                       }{" "}
@@ -1119,11 +1186,20 @@ export function ExecutionApp() {
                 <AccountPanel
                   key={account.profile.id}
                   profile={account.profile}
+                  preview={memberPreview}
+                  onPreview={() => setMemberPreview(!memberPreview)}
+                  onNavigate={(s) => {
+                    setScreen(s);
+                    setMode("List");
+                  }}
                   save={account.save}
                   onHelp={() => setHelp(true)}
                   onMessage={setToast}
                 />
               )}
+              {screen === "Settings" &&
+                account.profile.role === "super_admin" &&
+                !memberPreview && <SystemPanel team={account.team} />}
               {screen === "Vault" && (
                 <>
                   <h2>History</h2>
@@ -1141,7 +1217,11 @@ export function ExecutionApp() {
                         <button
                           className="text-button"
                           onClick={() =>
-                            patch(t.id, { archived: false, state: "TODO" })
+                            patch(t.id, {
+                              archived: false,
+                              state: "TODO",
+                              completedAt: undefined,
+                            })
                           }
                         >
                           Restore
@@ -1223,6 +1303,7 @@ export function ExecutionApp() {
       )}
       {sharedEditing && (
         <SharedTaskDetails
+          key={sharedEditing.id}
           task={sharedEditing}
           profile={account.profile}
           team={account.team}

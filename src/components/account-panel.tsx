@@ -1,14 +1,20 @@
 "use client";
 import { useState } from "react";
 import { supabase } from "@/lib/supabase";
-import { Profile, themes, Theme } from "@/lib/accounts";
+import { Profile, themes, Theme, resolveTheme } from "@/lib/accounts";
 export function AccountPanel({
   profile,
   save,
   onHelp,
   onMessage,
+  preview,
+  onPreview,
+  onNavigate,
 }: {
   profile: Profile;
+  preview: boolean;
+  onPreview: () => void;
+  onNavigate: (screen: "Vault" | "Analytics") => void;
   save: (
     p: Partial<
       Pick<Profile, "display_name" | "job_title" | "theme" | "onboarded">
@@ -25,8 +31,10 @@ export function AccountPanel({
     <section className="account-panel">
       <h2>Account</h2>
       <p>
-        @{profile.username} ·{" "}
-        {profile.role === "super_admin" ? "Superadmin" : "Member"}
+        @{profile.username}
+        {!preview && profile.role !== "user" && (
+          <> · {profile.role === "super_admin" ? "Superadmin" : "Admin"}</>
+        )}
       </p>
       <form
         onSubmit={async (e) => {
@@ -61,22 +69,64 @@ export function AccountPanel({
           Save
         </button>
       </form>
-      <h3>Color</h3>
-      <div className="theme-options">
-        {(Object.entries(themes) as [Theme, string][]).map(([key, color]) => (
-          <button
-            key={key}
-            aria-pressed={profile.theme === key}
-            style={{ background: color }}
-            onClick={async () => {
-              if (!(await save({ theme: key })))
-                onMessage("Could not save color.");
-            }}
-          >
-            {key}
-          </button>
-        ))}
+      <h3>Appearance</h3>
+      <div className="theme-options" role="group" aria-label="Color palette">
+        {(Object.entries(themes) as [Theme, (typeof themes)[Theme]][]).map(
+          ([key, theme]) => (
+            <button
+              key={key}
+              className="palette-option"
+              aria-label={theme.label}
+              aria-pressed={resolveTheme(profile.theme) === key}
+              disabled={busy}
+              onClick={async () => {
+                setBusy(true);
+                const ok = await save({ theme: key });
+                setBusy(false);
+                onMessage(
+                  ok ? "Appearance saved." : "Could not save appearance.",
+                );
+              }}
+            >
+              <span className="palette-preview" aria-hidden="true">
+                {[
+                  theme.tokens.background,
+                  theme.tokens.surface,
+                  theme.tokens.accent,
+                  theme.tokens.secondary,
+                ].map((color, i) => (
+                  <i key={i} style={{ background: color }} />
+                ))}
+              </span>
+              {resolveTheme(profile.theme) === key && (
+                <span className="palette-check" aria-hidden="true">
+                  ✓
+                </span>
+              )}
+            </button>
+          ),
+        )}
       </div>
+      <div className="button-row account-shortcuts">
+        <button className="secondary" onClick={() => onNavigate("Vault")}>
+          History
+        </button>
+        <button className="secondary" onClick={() => onNavigate("Analytics")}>
+          Time
+        </button>
+      </div>
+      {profile.role === "super_admin" && (
+        <div className="member-preview-control">
+          <button
+            className="secondary"
+            aria-pressed={preview}
+            onClick={onPreview}
+          >
+            {preview ? "Exit member view" : "View as member"}
+          </button>
+          <p>Uses your own tasks with management controls hidden.</p>
+        </div>
+      )}
       <h3>Password</h3>
       <form
         onSubmit={async (e) => {
